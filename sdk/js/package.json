@@ -1,0 +1,43 @@
+{
+  "name": "@intentprotocol/sdk",
+  "version": "0.1.0",
+  "description": "Build AI agents that negotiate and transact — in 10 lines of code.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "require": "./src/index.cjs"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "example:personal": "node examples/personal-agent.js",
+    "example:business": "node examples/business-agent.js"
+  },
+  "keywords": [
+    "intent",
+    "protocol",
+    "agent",
+    "negotiation",
+    "rfq",
+    "bid",
+    "deal",
+    "ai-agents",
+    "marketplace"
+  ],
+  "author": "Intent Protocol Contributors",
+  "license": "MIT",
+  "dependencies": {
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "ulid": "^2.3.0",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
