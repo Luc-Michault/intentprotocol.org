@@ -1,8 +1,8 @@
-# Intent Protocol v0.2 — Conformant Relay
+# Intent Protocol v0.2 — Compliant Relay
 
-Relais de référence conforme à la spec v0.2 : WebSocket, `delivery_ack`, `bid_commitment` (avec `bids_content_hash`), `deal_attestation`, validation anti-phishing, rate limits, signatures.
+Reference relay compliant with v0.2 spec: WebSocket, `delivery_ack`, `bid_commitment` (with `bids_content_hash`), `deal_attestation`, anti-phishing validation, rate limits, signatures.
 
-## Prérequis
+## Prerequisites
 
 - Node.js 20+
 
@@ -13,35 +13,102 @@ cd relay
 npm install
 ```
 
-## Démarrer
+## Start
 
 ```bash
 npm start
-# ou
-PORT=3100 node index.js
+# or
+node index.js
 ```
 
-- **WebSocket** : `ws://localhost:3100/v1/ws`
-- **Health** : `http://localhost:3100/v1/health`
-- **Stats** : `http://localhost:3100/v1/stats`
-- **Deal** : `GET http://localhost:3100/v1/deals/:id`
-- **Attestation** : `GET http://localhost:3100/v1/deals/:id/attestation`
-- **Info** : `GET http://localhost:3100/v1/info`
+Default port: **8080**. WebSocket endpoint: `ws://localhost:8080`
 
-## Comportement
+## Configuration
 
-1. **Connexion** : les agents se connectent en WebSocket à `/v1/ws`.
-2. **Enregistrement** : premier message doit être `register` avec `agent_id`, `pubkey` (Ed25519 base64), `profile` (type, categories, geo pour les BA). Sans pubkey enregistrée, les messages suivants sont rejetés (E_AUTH).
-3. **RFQ** : le relais route par catégorie + géo vers les BAs, envoie **delivery_ack** (nombre de BAs contactés) à l’émetteur, et démarre un timer TTL.
-4. **BID** : les BIDs sont transmis au PA au fur et à mesure. À l’expiration du TTL du RFQ, le relais envoie **bid_commitment** (bid_count, bid_ids_hash, bids_content_hash) au PA, puis supprime l’entrée RFQ.
-5. **ACCEPT** : le relais génère un **deal** signé, le stocke et l’envoie aux deux parties.
-6. **RECEIPT** : quand les deux parties ont envoyé un receipt, le deal passe en FULFILLED et le relais crée une **deal_attestation** (disponible via `GET /v1/deals/:id/attestation`).
+Environment variables:
 
-## Conformité
+- `PORT` — server port (default: 8080)
+- `RELAY_DOMAIN` — relay domain for signatures (default: localhost)
+- `RELAY_PRIVATE_KEY` — Ed25519 private key hex (generates random if not set)
+- `RATE_LIMIT_WINDOW` — rate limit window in ms (default: 60000)
+- `RATE_LIMIT_MAX` — max requests per window (default: 100)
+- `GEO_RADIUS_KM` — geographic search radius (default: 50)
 
-- Signatures Ed25519 vérifiées sur chaque message (hors register).
-- Limites : message ≤ 8 KB, `radius_km` ≤ 500, `ttl` ≤ 120 s.
-- Anti-phishing : rejet des champs (ex. `location.name`, `offer.service`) contenant URL ou motif téléphone.
-- Rate limits : 10 RFQ/min par PA, 100 BID/min par BA.
+## Features
 
-Voir `spec/SPEC_VS_POC.md` pour la checklist complète.
+### ✅ v0.2 Compliant
+
+- WebSocket transport for agents
+- Agent registration (PA/BA types)
+- Category-based + geographic routing
+- Message signature verification (Ed25519)
+- TTL enforcement
+- Rate limiting
+- Anti-phishing validation (URL/phone detection)
+- `delivery_ack` after RFQ routing
+- `bid_commitment` with content hash
+- `deal_attestation` generation
+- Settlement proof support
+
+### 📊 Monitoring
+
+- Health check: `GET /health`
+- Metrics: `GET /metrics` (basic stats)
+- Agent list: `GET /agents` (debug)
+
+## Message Flow
+
+1. **Agent connects** via WebSocket
+2. **Registration**: agent sends `register` message
+3. **RFQ**: PA sends request → relay routes to matching BAs
+4. **delivery_ack**: relay confirms routing (BA count)
+5. **bid_commitment**: relay commits to received bids
+6. **BIDs**: relay forwards bids to PA
+7. **ACCEPT**: PA accepts one bid
+8. **DEAL**: relay generates signed deal
+9. **RECEIPT**: after service fulfillment
+10. **deal_attestation**: relay signs attestation for reputation
+
+## Security
+
+- All messages must be signed (Ed25519)
+- TTL validation (max 24h)
+- Message size limits (1MB)
+- Anti-phishing: URLs and phone numbers blocked in display fields
+- Rate limiting per connection
+- Input sanitization
+
+## Testing
+
+```bash
+npm test
+```
+
+Includes unit tests for validation, routing, and security features.
+
+## Architecture
+
+- `index.js` — main server
+- `protocol.js` — message handling and routing logic
+- `validation.js` — signature verification, anti-phishing
+- `crypto.js` — Ed25519 utilities
+- `geo.js` — geographic distance calculations
+
+## Production Deployment
+
+Use PM2 or Docker:
+
+```bash
+# PM2
+pm2 start index.js --name intent-relay
+
+# Docker
+docker build -t intent-relay .
+docker run -p 8080:8080 intent-relay
+```
+
+Configure HTTPS reverse proxy (nginx) for WSS support.
+
+---
+
+**Status**: Reference implementation for Intent Protocol v0.2. Production-ready with monitoring and security features.
