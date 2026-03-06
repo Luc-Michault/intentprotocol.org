@@ -1,10 +1,13 @@
-"""Intent Protocol message builders."""
+"""Intent Protocol message builders (v0.2)."""
 
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 from .crypto import sign
+
+PROTO_VERSION = "intent/0.2"
 
 
 def _ulid() -> str:
@@ -21,22 +24,9 @@ def make_message(
     ttl: int = 30,
     to: str | None = None,
 ) -> dict:
-    """Build and sign a protocol message.
-
-    Args:
-        type_: Message type (rfq, bid, accept, cancel, receipt)
-        from_: Sender identity
-        secret_key: Ed25519 secret key (64 bytes)
-        payload: Type-specific fields
-        ref: Parent message ID
-        ttl: Time to live in seconds
-        to: Target agent (None for broadcast)
-
-    Returns:
-        Signed message dict
-    """
+    """Build and sign a protocol message."""
     body = {
-        "proto": "intent/0.1",
+        "proto": PROTO_VERSION,
         "type": type_,
         "id": _ulid(),
         "ref": ref,
@@ -103,9 +93,28 @@ def make_receipt(
     secret_key: bytes,
     deal_id: str,
     fulfillment: dict | None = None,
+    settlement_proof: dict | None = None,
 ) -> dict:
-    """Create a signed Receipt message."""
-    return make_message(
-        "receipt", from_, secret_key, {"fulfillment": fulfillment or {"completed": True}},
-        ref=deal_id, ttl=0,
-    )
+    """Create a signed Receipt message (v0.2: optional settlement_proof)."""
+    payload: dict = {"fulfillment": fulfillment or {"completed": True}}
+    if settlement_proof and isinstance(settlement_proof, dict):
+        payload["settlement_proof"] = {
+            "method": settlement_proof.get("method", "other"),
+            "reference": settlement_proof.get("reference", ""),
+            "amount": settlement_proof.get("amount"),
+            "currency": settlement_proof.get("currency"),
+        }
+    return make_message("receipt", from_, secret_key, payload, ref=deal_id, ttl=0)
+
+
+def _bid_canonical_line(bid: dict) -> str:
+    """Canonical line for one bid (must match relay)."""
+    offer = bid.get("offer") or {}
+    return f"{bid.get('id', '')}\t{bid.get('from', '')}\t{offer.get('price', '')}\t{offer.get('currency', '')}"
+
+
+def compute_bids_content_hash(bids: list[dict]) -> str:
+    """Compute bids_content_hash for verifying bid_commitment (v0.2)."""
+    sorted_bids = sorted(bids, key=lambda b: b.get("id", ""))
+    content = "\n".join(_bid_canonical_line(b) for b in sorted_bids)
+    return "sha256:" + hashlib.sha256(content.encode()).hexdigest()

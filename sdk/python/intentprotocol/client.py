@@ -1,8 +1,9 @@
-"""Intent Protocol SDK client for Python."""
+"""Intent Protocol SDK client for Python (v0.2)."""
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -13,7 +14,14 @@ import websockets
 from websockets.asyncio.client import connect as ws_connect
 
 from .crypto import generate_keypair
-from .protocol import make_rfq, make_bid, make_accept, make_cancel, make_receipt
+from .protocol import (
+    make_rfq,
+    make_bid,
+    make_accept,
+    make_cancel,
+    make_receipt,
+    compute_bids_content_hash,
+)
 from .types import (
     AgentIdentity,
     Bid,
@@ -159,14 +167,26 @@ class IntentClient:
             "bids": [],
             "future": future,
             "max_bids": max_bids or float("inf"),
+            "commitment": None,
         }
         self._pending_broadcasts[msg["id"]] = entry
 
-        # Set timeout
         async def _timeout():
             await asyncio.sleep(timeout)
             if msg["id"] in self._pending_broadcasts:
                 e = self._pending_broadcasts.pop(msg["id"])
+                if e["commitment"] and e["commitment"].get("bids_content_hash"):
+                    computed = compute_bids_content_hash([b.raw for b in e["bids"]])
+                    ok = computed == e["commitment"]["bids_content_hash"]
+                    self._emit(
+                        "bid_commitment_verified" if ok else "bid_commitment_mismatch",
+                        {
+                            "rfq_id": msg["id"],
+                            "expected": e["commitment"]["bids_content_hash"],
+                            "computed": computed,
+                            "bid_count": len(e["bids"]),
+                        },
+                    )
                 if not e["future"].done():
                     e["future"].set_result(e["bids"])
 
@@ -221,10 +241,11 @@ class IntentClient:
         profile_dict = profile.to_dict() if isinstance(profile, BusinessProfile) else profile
         self._register_profile = profile_dict
 
+        pubkey_b64 = base64.b64encode(self._identity.public_key).decode()
         await self._send({
             "type": "register",
             "agent_id": self._identity.agent_id,
-            "pubkey": f"ed25519:{self._identity.public_key.hex()}",
+            "pubkey": f"ed25519:{pubkey_b64}",
             "profile": profile_dict,
         })
 
@@ -284,12 +305,37 @@ class IntentClient:
 
     # ── Deal Management ─────────────────────────────────
 
-    async def confirm(self, deal_id: str, fulfillment: dict | None = None) -> None:
-        """Send a fulfillment receipt for a deal."""
+    async def confirm(
+        self,
+        deal_id: str,
+        fulfillment: dict | None = None,
+        settlement_proof: dict | None = None,
+    ) -> None:
+        """Send a fulfillment receipt for a deal (v0.2: optional settlement_proof)."""
         self._require_identity()
         self._require_connection()
-        msg = make_receipt(self._identity.agent_id, self._identity.secret_key, deal_id, fulfillment)
+        msg = make_receipt(
+            self._identity.agent_id,
+            self._identity.secret_key,
+            deal_id,
+            fulfillment,
+            settlement_proof,
+        )
         await self._send(msg)
+
+    async def fetch_deal_attestation(self, deal_id: str) -> dict | None:
+        """Fetch deal attestation from relay (v0.2). Returns None if not found or on error."""
+        base = self.relay_url.replace("ws:", "http:").replace("wss:", "https:").rstrip("/")
+        if base.endswith("/v1/ws"):
+            base = base[: -len("/v1/ws")]
+        url = f"{base}/v1/deals/{deal_id}/attestation"
+        try:
+            import urllib.request
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode())
+        except Exception:
+            return None
 
     async def cancel(self, deal_id: str, reason: str | None = None) -> None:
         """Cancel a deal."""
@@ -373,6 +419,15 @@ class IntentClient:
         if msg_type == "rfq":
             self._emit("rfq", msg)
 
+        elif msg_type == "delivery_ack":
+            self._emit("delivery_ack", msg)
+
+        elif msg_type == "bid_commitment":
+            self._emit("bid_commitment", msg)
+            entry = self._pending_broadcasts.get(msg.get("ref", ""))
+            if entry:
+                entry["commitment"] = msg
+
         elif msg_type == "bid":
             bid = Bid(
                 id=msg.get("id", ""),
@@ -387,12 +442,18 @@ class IntentClient:
             )
             self._emit("bid", bid)
 
-            # Check pending broadcasts
             entry = self._pending_broadcasts.get(msg.get("ref", ""))
             if entry:
                 entry["bids"].append(bid)
                 if len(entry["bids"]) >= entry["max_bids"]:
                     self._pending_broadcasts.pop(msg.get("ref", ""))
+                    if entry.get("commitment") and entry["commitment"].get("bids_content_hash"):
+                        computed = compute_bids_content_hash([b.raw for b in entry["bids"]])
+                        ok = computed == entry["commitment"]["bids_content_hash"]
+                        self._emit(
+                            "bid_commitment_verified" if ok else "bid_commitment_mismatch",
+                            {"rfq_id": msg.get("ref"), "expected": entry["commitment"]["bids_content_hash"], "computed": computed, "bid_count": len(entry["bids"])},
+                        )
                     if not entry["future"].done():
                         entry["future"].set_result(entry["bids"])
 
@@ -408,6 +469,9 @@ class IntentClient:
                 raw=msg,
             )
             self._emit("deal", deal)
+
+        elif msg_type == "deal_attestation":
+            self._emit("deal_attestation", msg)
 
         elif msg_type == "cancel":
             self._emit("cancel", msg)

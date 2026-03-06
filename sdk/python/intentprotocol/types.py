@@ -34,19 +34,22 @@ class Budget:
 
 @dataclass
 class RFQ:
-    """Request For Quote — a structured intent to broadcast."""
+    """Request For Quote — a structured intent to broadcast (v0.2: category_schema_version)."""
     action: str = "book"  # book | buy | rent | hire | quote | info
     category: str = ""
     when: When | dict | None = None
     where: Where | dict | None = None
     budget: Budget | dict | None = None
     specs: dict[str, Any] | None = None
+    category_schema_version: str | None = None  # v0.2
     quantity: int = 1
     flexible: bool = False
 
     def to_dict(self) -> dict:
         """Convert to protocol-compatible dict."""
         d: dict[str, Any] = {"action": self.action, "category": self.category}
+        if self.category_schema_version:
+            d["category_schema_version"] = self.category_schema_version
         if self.when:
             d["when"] = self.when if isinstance(self.when, dict) else {
                 k: v for k, v in self.when.__dict__.items() if v is not None

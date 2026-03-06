@@ -10,5 +10,6 @@ export { PersonalAgent, BusinessAgent } from './agent.js';
 
 // Low-level utilities
 export { generateKeypair, sign, verify } from './crypto.js';
-export { makeRFQ, makeBid, makeAccept, makeCancel, makeReceipt, makeMessage } from './protocol.js';
+export { makeRFQ, makeBid, makeAccept, makeCancel, makeReceipt, makeMessage, computeBidsContentHash } from './protocol.js';
 export { haversine, geoMatch } from './geo.js';
+export { sanitizeForDisplay, sanitizeBidForDisplay, validateDisplayField } from './sanitize.js';

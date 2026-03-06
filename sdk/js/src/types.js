@@ -37,6 +37,7 @@
  * @property {Where} [where] - Geographic constraints
  * @property {Budget} [budget] - Budget constraints
  * @property {Object} [specs] - Category-specific parameters
+ * @property {string} [category_schema_version] - Optional schema version (v0.2)
  * @property {number} [quantity] - Quantity (default: 1)
  * @property {boolean} [flexible] - Whether constraints are flexible
  */
@@ -66,6 +67,14 @@
  * @typedef {Object} Settlement
  * @property {'direct'|'escrow_stripe'|'escrow_crypto'|'escrow_relay'|'invoice'} method
  * @property {string} [pay_at] - Payment timing
+ */
+
+/**
+ * @typedef {Object} SettlementProof
+ * @property {'stripe'|'escrow_crypto'|'bank_transfer'|'invoice'|'on_site'|'other'} method
+ * @property {string} [reference] - Transaction ID (payment_intent, tx_hash, invoice_id)
+ * @property {number} [amount]
+ * @property {string} [currency] - ISO 4217
  */
 
 /**
@@ -119,6 +128,31 @@
  * @property {number} ts
  * @property {string} sig
  * @property {Object} deal - Deal details
+ */
+
+/**
+ * @typedef {Object} BidCommitmentMessage
+ * @property {string} type - 'bid_commitment'
+ * @property {string} ref - RFQ ID
+ * @property {number} bid_count
+ * @property {string} bid_ids_hash - 'sha256:...'
+ * @property {string} bids_content_hash - 'sha256:...' (v0.2)
+ * @property {string} sig
+ */
+
+/**
+ * @typedef {Object} DealAttestationMessage
+ * @property {string} type - 'deal_attestation'
+ * @property {string} deal_id
+ * @property {string} rfq_id
+ * @property {string} client
+ * @property {string} provider
+ * @property {string} relay
+ * @property {number} amount
+ * @property {string} currency
+ * @property {string} state
+ * @property {number} ts
+ * @property {string} sig
  */
 
 export {};

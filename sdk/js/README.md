@@ -15,7 +15,8 @@ npm install @intentprotocol/sdk
 ```javascript
 import { PersonalAgent } from '@intentprotocol/sdk';
 
-const agent = new PersonalAgent('ws://localhost:3100', 'alice');
+// Use /v1/ws for the conformant relay (see relay/README.md)
+const agent = new PersonalAgent('ws://localhost:3100/v1/ws', 'alice');
 await agent.connect();
 
 const bids = await agent.findService({
@@ -34,7 +35,7 @@ const deal = await agent.acceptBest(bids);
 ```javascript
 import { BusinessAgent } from '@intentprotocol/sdk';
 
-const agent = new BusinessAgent('ws://localhost:3100', 'my-salon', {
+const agent = new BusinessAgent('ws://localhost:3100/v1/ws', 'my-salon', {
   name: 'Salon Bella',
   categories: ['services.beauty.haircut'],
   geo: { lat: 43.296, lon: -0.371, radius_km: 15 },
@@ -63,7 +64,7 @@ The core client class — use this for full control.
 ```javascript
 import { IntentClient } from '@intentprotocol/sdk';
 
-const client = new IntentClient('ws://localhost:3100', {
+const client = new IntentClient('ws://localhost:3100/v1/ws', {
   autoReconnect: true,  // default: true
 });
 ```
@@ -103,8 +104,9 @@ const client = new IntentClient('ws://localhost:3100', {
 
 | Method | Description |
 |--------|-------------|
-| `await confirm(dealId)` | Send fulfillment receipt |
+| `await confirm(dealId, fulfillment?, settlementProof?)` | Send receipt (v0.2: optional settlement_proof) |
 | `await cancel(dealId, reason?)` | Cancel a deal |
+| `await fetchDealAttestation(dealId)` | Fetch deal attestation from relay (v0.2) |
 
 #### Events
 
@@ -112,6 +114,10 @@ const client = new IntentClient('ws://localhost:3100', {
 client.on('rfq', (rfq) => { /* incoming RFQ */ });
 client.on('bid', (bid) => { /* incoming bid */ });
 client.on('deal', (deal) => { /* deal confirmed */ });
+client.on('delivery_ack', (ack) => { /* v0.2: RFQ routed to N agents */ });
+client.on('bid_commitment', (c) => { /* v0.2: bid count + hashes */ });
+client.on('bidCommitmentVerified', (r) => { /* v0.2: hash matches */ });
+client.on('bid_commitment_mismatch', (r) => { /* v0.2: relay may have dropped bids */ });
 client.on('cancel', (cancel) => { /* deal cancelled */ });
 client.on('receipt', (receipt) => { /* fulfillment confirmed */ });
 client.on('error', (err) => { /* connection error */ });
@@ -147,9 +153,12 @@ agent.onDeal((deal) => { /* handle confirmed deal */ });
 
 ```javascript
 import { generateKeypair, sign, verify } from '@intentprotocol/sdk';
-import { makeRFQ, makeBid, makeAccept } from '@intentprotocol/sdk';
+import { makeRFQ, makeBid, makeAccept, makeReceipt, computeBidsContentHash } from '@intentprotocol/sdk';
 import { haversine, geoMatch } from '@intentprotocol/sdk';
+import { sanitizeForDisplay, sanitizeBidForDisplay, validateDisplayField } from '@intentprotocol/sdk';
 ```
+
+**v0.2:** Use `sanitizeBidForDisplay(bid)` before showing bid content to users. Use `confirm(dealId, fulfillment, settlementProof)` to attach a payment reference. Listen to `delivery_ack` and `bid_commitment`; `bidCommitmentVerified` / `bid_commitment_mismatch` indicate whether the relay forwarded all bids.
 
 ## Features
 
@@ -158,10 +167,11 @@ import { haversine, geoMatch } from '@intentprotocol/sdk';
 - 📡 **Event-driven** — EventEmitter pattern for business agents
 - ⏱️ **Promise-based** — `broadcast()` returns bids after TTL
 - 📦 **ESM + CJS** — works everywhere
+- 🛡️ **v0.2** — proto 0.2, settlement_proof, bid commitment verification, sanitization
 
 ## Protocol
 
-Based on the Intent Protocol v0.1 — [intentprotocol.org](https://intentprotocol.org)
+Intent Protocol v0.2 — [intentprotocol.org](https://intentprotocol.org). Connect to the conformant relay at `ws://host:port/v1/ws`.
 
 ## License
 

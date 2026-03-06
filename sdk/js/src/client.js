@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { generateKeypair } from './crypto.js';
-import { makeRFQ, makeBid, makeAccept, makeCancel, makeReceipt } from './protocol.js';
+import { makeRFQ, makeBid, makeAccept, makeCancel, makeReceipt, computeBidsContentHash } from './protocol.js';
 
 const DEFAULT_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
@@ -154,20 +154,13 @@ export class IntentClient {
 
   /**
    * Broadcast an RFQ and collect bids for the TTL duration.
+   * v0.2: emits 'delivery_ack' and 'bid_commitment'; verifies bids_content_hash when TTL expires.
    *
    * @param {import('./types.js').Intent} intent - The intent to broadcast
    * @param {Object} [options]
    * @param {number} [options.ttl=30] - Time to collect bids (seconds)
    * @param {number} [options.maxBids] - Stop early after this many bids
    * @returns {Promise<import('./types.js').BidMessage[]>} Collected bids
-   *
-   * @example
-   * const bids = await client.broadcast({
-   *   action: 'book',
-   *   category: 'services.beauty.haircut',
-   *   budget: { max: 30, currency: 'EUR' },
-   *   where: { lat: 43.3, lon: -0.37, radius_km: 3 },
-   * }, { ttl: 15 });
    */
   async broadcast(intent, options = {}) {
     this._requireIdentity();
@@ -185,8 +178,19 @@ export class IntentClient {
         bids,
         resolve,
         maxBids,
+        commitment: null,
         timer: setTimeout(() => {
           this._pendingBroadcasts.delete(rfq.id);
+          if (entry.commitment && entry.commitment.bids_content_hash) {
+            const computed = computeBidsContentHash(bids);
+            const ok = computed === entry.commitment.bids_content_hash;
+            this._emit(ok ? 'bidCommitmentVerified' : 'bid_commitment_mismatch', {
+              rfqId: rfq.id,
+              expected: entry.commitment.bids_content_hash,
+              computed,
+              bidCount: bids.length,
+            });
+          }
           resolve(bids);
         }, ttl * 1000),
       };
@@ -300,11 +304,13 @@ export class IntentClient {
 
   /**
    * Confirm deal fulfillment by sending a receipt.
+   * v0.2: optional settlement_proof to link deal to payment.
    *
    * @param {string} dealId - Deal ID
    * @param {Object} [fulfillment] - Fulfillment details
+   * @param {import('./types.js').SettlementProof} [settlementProof] - Optional payment reference (v0.2)
    */
-  async confirm(dealId, fulfillment) {
+  async confirm(dealId, fulfillment, settlementProof) {
     this._requireIdentity();
     this._requireConnection();
 
@@ -313,8 +319,26 @@ export class IntentClient {
       this._identity.secretKey,
       dealId,
       fulfillment || { completed: true },
+      settlementProof,
     );
     this._send(receipt);
+  }
+
+  /**
+   * Fetch deal attestation from relay (v0.2). Requires relay to expose GET /v1/deals/:id/attestation.
+   * @param {string} dealId - Deal ID
+   * @returns {Promise<import('./types.js').DealAttestationMessage|null>} Attestation or null
+   */
+  async fetchDealAttestation(dealId) {
+    const base = this.relayUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:').replace(/\/v1\/ws\/?$/, '');
+    const url = `${base}/v1/deals/${encodeURIComponent(dealId)}/attestation`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -410,7 +434,6 @@ export class IntentClient {
   }
 
   _handleMessage(msg) {
-    // Emit raw for internal use
     this._emit('_raw', msg);
 
     switch (msg.type) {
@@ -418,15 +441,35 @@ export class IntentClient {
         this._emit('rfq', msg);
         break;
 
+      case 'delivery_ack':
+        this._emit('delivery_ack', msg);
+        break;
+
+      case 'bid_commitment': {
+        this._emit('bid_commitment', msg);
+        const entry = this._pendingBroadcasts.get(msg.ref);
+        if (entry) entry.commitment = msg;
+        break;
+      }
+
       case 'bid': {
         this._emit('bid', msg);
-        // Check if this bid belongs to a pending broadcast
         const entry = this._pendingBroadcasts.get(msg.ref);
         if (entry) {
           entry.bids.push(msg);
           if (entry.bids.length >= entry.maxBids) {
             clearTimeout(entry.timer);
             this._pendingBroadcasts.delete(msg.ref);
+            if (entry.commitment && entry.commitment.bids_content_hash) {
+              const computed = computeBidsContentHash(entry.bids);
+              const ok = computed === entry.commitment.bids_content_hash;
+              this._emit(ok ? 'bidCommitmentVerified' : 'bid_commitment_mismatch', {
+                rfqId: msg.ref,
+                expected: entry.commitment.bids_content_hash,
+                computed,
+                bidCount: entry.bids.length,
+              });
+            }
             entry.resolve(entry.bids);
           }
         }
@@ -435,6 +478,10 @@ export class IntentClient {
 
       case 'deal':
         this._emit('deal', msg);
+        break;
+
+      case 'deal_attestation':
+        this._emit('deal_attestation', msg);
         break;
 
       case 'cancel':
@@ -446,11 +493,13 @@ export class IntentClient {
         break;
 
       case 'registered':
-        // Handled by register() promise
+        break;
+
+      case 'error':
+        this._emit('error', msg);
         break;
 
       default:
-        // Unknown message type
         break;
     }
   }

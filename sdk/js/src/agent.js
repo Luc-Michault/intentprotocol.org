@@ -28,16 +28,16 @@ export class PersonalAgent {
 
   /**
    * Connect to the relay.
+   * v0.2: sends pubkey in register (required by conformant relay).
    */
   async connect() {
     await this.client.connect();
-    // Register as personal agent
     this.client._send({
       type: 'register',
       agent_id: this.client.identity.agentId,
+      pubkey: 'ed25519:' + this.client.identity.publicKey,
       profile: { type: 'personal' },
     });
-    // Wait for ack
     await new Promise((resolve) => {
       const handler = (msg) => {
         if (msg.type === 'registered') {
@@ -179,9 +179,10 @@ export class BusinessAgent {
    * Confirm deal fulfillment.
    * @param {string} dealId
    * @param {Object} [fulfillment]
+   * @param {import('./types.js').SettlementProof} [settlementProof] - Optional payment reference (v0.2)
    */
-  async confirm(dealId, fulfillment) {
-    await this.client.confirm(dealId, fulfillment);
+  async confirm(dealId, fulfillment, settlementProof) {
+    await this.client.confirm(dealId, fulfillment, settlementProof);
   }
 
   /**

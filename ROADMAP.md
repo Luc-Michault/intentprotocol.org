@@ -13,27 +13,34 @@
 - [ ] Post Hacker News / r/programming / Twitter
 - [ ] Premier feedback communauté
 
-## v0.2 — "Le Marché" (Q2 2026)
-*Multi-catégories, vrais business agents, premiers revenus.*
+## v0.2 — "La base solide" (Q2 2026)
+*Protocole simple à déployer, complet pour construire dessus, fiable en sécurité. Les outils et partenariats (quel relais hébergé, quels premiers BAs) se définiront sur cette couche.*
 
-### Protocole
-- [ ] Action types étendus : `hire`, `query`, `monitor`, `delegate`
-- [ ] Négociation multi-round (counter-offers formalisés)
-- [ ] Category Schema Registry (validation des specs par catégorie)
-- [ ] Trust Web : agents se voucher mutuellement (PGP-like)
-- [ ] Relay federation réelle (2+ relays qui se synchronisent)
+### Principes
+- **Couche de base** : comme HTTP ou SMTP — interop agent-to-agent d’abord ; liquidité et produits viendront par-dessus.
+- **Spec v0.2** : delta documenté dans `spec/v0.2/CHANGES.md` (compatibilité ascendante avec 0.1).
 
-### Produit
-- [ ] Hosted relay public (`relay.intentprotocol.org`)
-- [ ] Dashboard business : analytics, bids envoyés, deals conclus, réputation
-- [ ] Onboarding simplifié : "Branche ton salon en 5 min"
-- [ ] Stripe Connect intégré pour escrow natif
-- [ ] Premier vrai business agent (Websual ? un resto à Pau ?)
+### Protocole (spec v0.2)
+- [ ] **Settlement proof** : champ optionnel dans `receipt` pour lier deal et paiement (référence Stripe, tx_hash, etc.)
+- [ ] **Deal attestations** : format signé par le relais (deal_id, parties, montant, relay) pour réputation cross-relay vérifiable
+- [ ] **Anti-phishing** : règles explicites sur `location.name`, `address`, etc. (pas d’URL, pas de téléphone) ; validation relais + sanitization SDK
+- [ ] **Bid commitment renforcé** : `bids_content_hash` en plus de `bid_ids_hash` pour détecter les relais qui cachent des bids
+- [ ] **Category Schema Registry versionné** : schemas par catégorie avec version ; RFQ peut préciser `category_schema_version`
+- [ ] **Réputation** : annulations pondérées par contrepartie (limiter le griefing par PAs multiples)
+- [ ] Négociation multi-round (counter-offers) déjà en v0.1 ; formaliser si besoin
+- [ ] Trust Web / federation 2+ relais : préparé par attestations et via ; implémentation complète possible en fin de v0.2 ou v0.3
 
-### Monétisation
-- [ ] Free tier : 100 deals/mois
-- [ ] Pro tier : illimité + analytics + priority routing
-- [ ] Settlement fee : 0.5% sur les escrow
+### Conformité et implémentation
+- [ ] **Relais minimal conforme** : une implémentation (Node ou Rust) avec WebSocket, `delivery_ack`, `bid_commitment` (avec `bids_content_hash`), génération deal + `deal_attestation`, validation spec (signatures, TTL, anti-phishing)
+- [ ] **SPEC_VS_POC** : document `spec/SPEC_VS_POC.md` à jour (PoC démo = simulé, relais conforme = référence)
+- [ ] **Tests de sécurité** en CI : signatures invalides, TTL, specs invalides, anti-phishing, rate limits
+- [ ] **SDK** : sanitization des champs affichés, support `settlement_proof` et vérification `bids_content_hash` (détail : `spec/v0.2/DEVELOPMENT_ORDER.md`)
+
+### Produit (dès que la base est prête)
+- [ ] Hosted relay public optionnel (`relay.intentprotocol.org`) pour tester la conformité en conditions réelles
+- [ ] Onboarding simplifié : "Branche ton agent / ton salon en 5 min"
+- [ ] **Partenariat cible** : [holia.me](https://holia.me) — SaaS regroupant plusieurs dizaines de milliers de praticiens ; excellente source de liquidité pour connecter des agents métier au protocole
+- [ ] Stripe Connect / escrow : intégration produit sur la couche settlement_proof (optionnel v0.2)
 
 ## v0.3 — "L'Économie des Agents" (Q3-Q4 2026)
 *Les agents se vendent des compétences entre eux.*
@@ -105,6 +112,8 @@
 > Après-demain : ton agent le fait sans que tu le demandes, parce qu'il sait que t'as besoin d'une coupe.
 
 Le protocole ne change pas entre ces 3 étapes. Seule l'intelligence de l'agent évolue. C'est pour ça qu'il faut poser le standard maintenant.
+
+**Couche de base d’abord** : Intent Protocol vise à être une base d’interopérabilité (comme HTTP, SMTP) entre agents. Les outils concrets et les partenariats (quel relais hébergé, quels premiers BAs, monétisation) se construiront sur cette couche — à définir au fil de l’adoption.
 
 ---
 

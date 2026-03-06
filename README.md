@@ -41,11 +41,18 @@ spec/v0.1/          Protocol specification
   └── EXAMPLES.md     Full transaction examples
 
 poc/                Proof of concept (Node.js)
-  ├── relay.js        In-memory relay server
+  ├── relay.js        In-memory relay server (simple)
+  ├── relay-server.js HTTP + POST /v1/demo (simulation pour la vitrine)
   ├── protocol.js     Message builder (RFQ, BID, ACCEPT, DEAL)
   ├── crypto.js       Ed25519 signing & verification
   ├── demo.js         End-to-end demo (run it!)
   └── geo.js          Geospatial matching utilities
+
+relay/               Relais conforme v0.2 (Node.js)
+  ├── index.js        WebSocket /v1/ws + REST (health, stats, deals, attestation)
+  ├── protocol.js     delivery_ack, bid_commitment, deal, deal_attestation
+  ├── validation.js   Signatures, TTL, anti-phishing, limites
+  └── README.md       Démarrer : npm start → ws://localhost:3100/v1/ws
 
 sdk/
   ├── js/             JavaScript SDK (@intentprotocol/sdk)

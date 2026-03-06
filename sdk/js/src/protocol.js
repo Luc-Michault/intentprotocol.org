@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
 import { sign } from './crypto.js';
+
+const PROTO_VERSION = 'intent/0.2';
 
 /**
  * Build and sign a protocol message.
@@ -14,7 +17,7 @@ import { sign } from './crypto.js';
  */
 export function makeMessage(type, from, secretKey, payload, ref = null, ttl = 30, to = null) {
   const body = {
-    proto: 'intent/0.1',
+    proto: PROTO_VERSION,
     type,
     id: ulid(),
     ref,
@@ -79,13 +82,47 @@ export function makeCancel(from, secretKey, refId, reason) {
 }
 
 /**
- * Create a signed Receipt message.
+ * Create a signed Receipt message (v0.2: optional settlement_proof).
  * @param {string} from - Agent identity
  * @param {string} secretKey - Base64 secret key
  * @param {string} dealId - Deal ID being confirmed
- * @param {Object} fulfillment - Fulfillment details
+ * @param {Object} [fulfillment] - Fulfillment details
+ * @param {import('./types.js').SettlementProof} [settlementProof] - Optional payment reference (v0.2)
  * @returns {Object}
  */
-export function makeReceipt(from, secretKey, dealId, fulfillment) {
-  return makeMessage('receipt', from, secretKey, { fulfillment }, dealId, 0);
+export function makeReceipt(from, secretKey, dealId, fulfillment, settlementProof) {
+  const payload = { fulfillment: fulfillment || { completed: true } };
+  if (settlementProof && typeof settlementProof === 'object') {
+    payload.settlement_proof = {
+      method: settlementProof.method || 'other',
+      reference: settlementProof.reference ?? '',
+      amount: settlementProof.amount,
+      currency: settlementProof.currency,
+    };
+  }
+  return makeMessage('receipt', from, secretKey, payload, dealId, 0);
+}
+
+/**
+ * Canonical line for one bid (must match relay computation for v0.2 bid_commitment).
+ * @param {import('./types.js').BidMessage} bid
+ * @returns {string}
+ */
+function bidCanonicalLine(bid) {
+  const price = bid.offer?.price ?? '';
+  const currency = bid.offer?.currency ?? '';
+  return `${bid.id}\t${bid.from}\t${price}\t${currency}`;
+}
+
+/**
+ * Compute bids_content_hash from received bids (same canonical order as relay).
+ * Use to verify bid_commitment.bids_content_hash after collecting bids.
+ * @param {import('./types.js').BidMessage[]} bids
+ * @returns {string} 'sha256:' + hex
+ */
+export function computeBidsContentHash(bids) {
+  const sorted = [...bids].sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+  const contentConcat = sorted.map(bidCanonicalLine).join('\n');
+  const hex = createHash('sha256').update(contentConcat, 'utf8').digest('hex');
+  return 'sha256:' + hex;
 }
