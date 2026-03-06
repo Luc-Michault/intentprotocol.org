@@ -17,13 +17,13 @@ You: "Find me a haircut tomorrow at 2pm, under 30€, near me"
 
 Your Agent                    Relay Network                  Provider Agents
      │                              │                              │
-     │──── RFQ (intent) ──────────>│──── route by category+geo ──>│
+     │──── RFQ (intent) ───────────>│──── route by category+geo ──>│
      │                              │                              │
-     │<──── BID 28€ @ 14:30 ───────│<─────────────────────────────│ Salon A
-     │<──── BID 22€ @ 14:00 ───────│<─────────────────────────────│ Salon B
+     │<──── BID 28€ @ 14:30 ────────│<─────────────────────────────│ Salon A
+     │<──── BID 22€ @ 14:00 ────────│<─────────────────────────────│ Salon B
      │                              │                              │
-     │──── ACCEPT (Salon A) ──────>│──────────────────────────────>│
-     │<──── DEAL (signed) ─────────│                               │
+     │──── ACCEPT (Salon A) ───────>│─────────────────────────────>│
+     │<──── DEAL (signed) ──────────│                              │
      │                              │                              │
      Done. 152ms. Zero human input.
 ```
