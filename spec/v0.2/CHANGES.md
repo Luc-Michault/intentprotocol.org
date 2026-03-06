@@ -1,19 +1,19 @@
 # Intent Protocol — v0.2 Changes (Delta from v0.1)
 
-**Objectif v0.2** : Renforcer la base du protocole pour qu’elle soit **simple à déployer**, **complète pour construire des solutions réelles** et **fiable en sécurité**. Aucun changement breaking sur le flux RFQ → BID → ACCEPT → DEAL ; uniquement des ajouts et des durcissements.
+**v0.2 Goal**: Strengthen the protocol foundation to be **simple to deploy**, **complete for building real solutions**, and **security-reliable**. No breaking changes to the RFQ → BID → ACCEPT → DEAL flow; only additions and hardening.
 
-La version de protocole pour v0.2 est : `"proto": "intent/0.2"`. Les relais v0.2 acceptent les messages `intent/0.1` en lecture (compatibilité ascendante) mais émettent en `intent/0.2`.
+The protocol version for v0.2 is: `"proto": "intent/0.2"`. v0.2 relays accept `intent/0.1` messages for reading (backward compatibility) but emit in `intent/0.2`.
 
 ---
 
-## 1. Settlement proof (lien deal ↔ paiement)
+## 1. Settlement proof (deal ↔ payment link)
 
-### Problème
-Un deal signé n’a pas de lien vérifiable avec un paiement (Stripe, crypto, virement). Les litiges et l’audit sont difficiles.
+### Problem
+A signed deal has no verifiable link to payment (Stripe, crypto, transfer). Disputes and auditing are difficult.
 
-### Changement
+### Change
 
-**Receipt** — Nouveau champ optionnel `settlement_proof` :
+**Receipt** — New optional `settlement_proof` field:
 
 ```json
 {
@@ -29,28 +29,28 @@ Un deal signé n’a pas de lien vérifiable avec un paiement (Stripe, crypto, v
 }
 ```
 
-| Champ        | Obligatoire | Description |
-|-------------|-------------|-------------|
-| `method`    | Oui         | `stripe` \| `escrow_crypto` \| `bank_transfer` \| `invoice` \| `on_site` \| `other` |
-| `reference` | Si applicable | ID transaction (payment_intent, tx_hash, invoice_id) — max 128 chars |
-| `amount`    | Recommandé  | Montant effectivement réglé |
-| `currency`  | Recommandé  | Code ISO 4217 |
+| Field       | Required | Description |
+|-------------|----------|-------------|
+| `method`    | Yes      | `stripe` \| `escrow_crypto` \| `bank_transfer` \| `invoice` \| `on_site` \| `other` |
+| `reference` | If applicable | Transaction ID (payment_intent, tx_hash, invoice_id) — max 128 chars |
+| `amount`    | Recommended | Amount actually paid |
+| `currency`  | Recommended | ISO 4217 currency code |
 
-- Si le paiement est « sur place » ou « à régler plus tard », `method: "on_site"` ou `"invoice"`, `reference` peut être vide.
-- Les relais MAY exiger `settlement_proof` pour les deals au-dessus d’un montant (ex. > 500 €) selon leur politique.
+- If payment is "on-site" or "to be settled later", `method: "on_site"` or `"invoice"`, `reference` can be empty.
+- Relays MAY require `settlement_proof` for deals above a threshold (e.g. > €500) according to their policy.
 
-**Règle** : Les agents et relais qui implémentent l’escrow (Stripe, crypto) MUST remplir `settlement_proof` avec une référence vérifiable lorsque disponible.
+**Rule**: Agents and relays implementing escrow (Stripe, crypto) MUST fill `settlement_proof` with a verifiable reference when available.
 
 ---
 
-## 2. Attestations de deal (réputation cross-relay vérifiable)
+## 2. Deal attestations (verifiable cross-relay reputation)
 
-### Problème
-La réputation repose sur des données locales par relais. Un BA peut gonfler sa réputation avec des deals « cross-relay » auto-générés.
+### Problem
+Reputation relies on local relay data. A BA can inflate their reputation with self-generated "cross-relay" deals.
 
-### Changement
+### Change
 
-**Format d’attestation** — Chaque relais qui finalise un deal (état FULFILLED) produit une **Deal Attestation** signée :
+**Attestation format** — Each relay finalizing a deal (FULFILLED state) produces a signed **Deal Attestation**:
 
 ```json
 {
@@ -69,47 +69,47 @@ La réputation repose sur des données locales par relais. Un BA peut gonfler sa
 }
 ```
 
-- Signature = relais (clé privée du relais).
-- Les relais MAY publier les attestations sur un endpoint `GET /v1/deals/{deal_id}/attestation` ou les échanger avec les relais pairs en fédération.
-- Pour le calcul de réputation : un consommateur (autre relais, annuaire, BA) peut vérifier les attestations par signature et déduire `cross_relay_deals` / `diversity_factor` sans faire confiance à un seul relais.
+- Signature = relay (relay's private key).
+- Relays MAY publish attestations on a `GET /v1/deals/{deal_id}/attestation` endpoint or exchange them with peer relays in federation.
+- For reputation calculation: a consumer (other relay, directory, BA) can verify attestations by signature and derive `cross_relay_deals` / `diversity_factor` without trusting a single relay.
 
-**Règle** : Un relais conforme v0.2 MUST générer et signer une `deal_attestation` lorsque un deal passe en FULFILLED. Il MAY les stocker localement et les exposer via API ; l’échange inter-relais est RECOMMENDED pour la fédération.
-
----
-
-## 3. Anti-phishing (champs affichés à l’utilisateur)
-
-### Problème
-Les champs `location.name`, `location.address`, et tout texte affiché à l’utilisateur peuvent contenir des URLs, numéros de téléphone ou instructions de social engineering.
-
-### Changement
-
-**Règles de contenu (SCHEMAS + SECURITY)** :
-
-| Champ (exemples)     | Interdictions explicites |
-|----------------------|--------------------------|
-| `location.name`      | Aucune URL (http, https, www), aucun motif type numéro de téléphone (E.164, espacé), max 100 caractères |
-| `location.address`   | Idem, max 200 caractères |
-| `offer.service`      | Idem (pas d’URL, pas de téléphone), max 200 caractères |
-| Tout champ libre dans `offer` ou `reputation` affiché à l’humain | Idem |
-
-- **Validation** : Les relais MUST rejeter (E_INVALID) les messages dont ces champs contiennent des URLs ou des motifs téléphone (regex à définir dans SECURITY.md v0.2).
-- **SDK** : Les SDK MUST fournir une fonction de sanitization (strip URLs, masquage ou rejet de motifs téléphone) et l’appliquer par défaut avant affichage à l’utilisateur.
-
-**Regex indicatives** (à affiner) :
-- URL : `https?://\S+` ou présence de `\.(com|fr|org|net)\b`
-- Téléphone : séquence de 8+ chiffres avec éventuellement espaces, points, tirets
+**Rule**: A v0.2 compliant relay MUST generate and sign a `deal_attestation` when a deal moves to FULFILLED. It MAY store them locally and expose via API; inter-relay exchange is RECOMMENDED for federation.
 
 ---
 
-## 4. Bid commitment renforcé
+## 3. Anti-phishing (user-displayed fields)
 
-### Problème
-Un relais peut prétendre avoir reçu N bids et n’en transmettre que N-1 ; le PA ne peut pas prouver qu’un bid manquant existait.
+### Problem
+Fields like `location.name`, `location.address`, and any text displayed to users can contain URLs, phone numbers, or social engineering instructions.
 
-### Changement
+### Change
 
-**bid_commitment** — En plus de `bid_count` et `bid_ids_hash`, le relais MUST inclure un engagement sur le **contenu** des bids :
+**Content rules (SCHEMAS + SECURITY)**:
+
+| Field (examples)     | Explicit prohibitions |
+|----------------------|----------------------|
+| `location.name`      | No URLs (http, https, www), no phone number patterns (E.164, spaced), max 100 chars |
+| `location.address`   | Same, max 200 chars |
+| `offer.service`      | Same (no URL, no phone), max 200 chars |
+| Any free field in `offer` or `reputation` displayed to humans | Same |
+
+- **Validation**: Relays MUST reject (E_INVALID) messages where these fields contain URLs or phone patterns (regex to be defined in SECURITY.md v0.2).
+- **SDK**: SDKs MUST provide sanitization function (strip URLs, mask or reject phone patterns) and apply it by default before displaying to user.
+
+**Indicative regex** (to be refined):
+- URL: `https?://\S+` or presence of `\.(com|fr|org|net)\b`
+- Phone: sequence of 8+ digits with possible spaces, dots, dashes
+
+---
+
+## 4. Enhanced bid commitment
+
+### Problem
+A relay can claim to have received N bids and only forward N-1; the PA cannot prove a missing bid existed.
+
+### Change
+
+**bid_commitment** — In addition to `bid_count` and `bid_ids_hash`, relay MUST include commitment on bid **content**:
 
 ```json
 {
@@ -122,20 +122,20 @@ Un relais peut prétendre avoir reçu N bids et n’en transmettre que N-1 ; le 
 }
 ```
 
-- `bids_content_hash` = `SHA256(concat(sort(bid_id, from, price, currency pour chaque bid)))` — ordre canonique (tri par bid_id). Ainsi le PA peut vérifier que l’ensemble des bids reçus correspond au commitment ; si le relais omet un bid, le hash ne matche pas.
-- Les relais MUST envoyer `bid_commitment` avant de transmettre les premiers bids. Les PAs SHOULD vérifier le hash une fois tous les bids reçus (ou à l’expiration du TTL).
+- `bids_content_hash` = `SHA256(concat(sort(bid_id, from, price, currency for each bid)))` — canonical order (sort by bid_id). This way the PA can verify that the set of received bids matches the commitment; if relay omits a bid, hash won't match.
+- Relays MUST send `bid_commitment` before forwarding first bids. PAs SHOULD verify hash once all bids received (or at TTL expiration).
 
 ---
 
-## 5. Category Schema Registry versionné
+## 5. Versioned Category Schema Registry
 
-### Problème
-Les schemas de catégories peuvent diverger entre relais ; pas de référence de version dans les messages.
+### Problem
+Category schemas can diverge between relays; no version reference in messages.
 
-### Changement
+### Change
 
-- **Registry** : Les schemas de catégories sont des fichiers JSON Schema versionnés, par ex. `schemas/services.beauty.haircut/v1.0.json`. Le protocole ou la communauté héberge le registry (repo, CDN).
-- **RFQ** : Champ optionnel `intent.category_schema_version` :
+- **Registry**: Category schemas are versioned JSON Schema files, e.g. `schemas/services.beauty.haircut/v1.0.json`. Protocol or community hosts registry (repo, CDN).
+- **RFQ**: Optional `intent.category_schema_version` field:
   ```json
   "intent": {
     "category": "services.beauty.haircut",
@@ -143,92 +143,92 @@ Les schemas de catégories peuvent diverger entre relais ; pas de référence de
     ...
   }
   ```
-  Si absent, le relais utilise la dernière version connue pour cette catégorie.
-- **Validation** : Le relais valide `specs` contre le schema de la version demandée (ou par défaut). Si la version n’existe pas, E_INVALID.
+  If absent, relay uses latest known version for this category.
+- **Validation**: Relay validates `specs` against schema of requested version (or default). If version doesn't exist, E_INVALID.
 
-Cela permet d’évoluer les catégories sans casser les anciens agents (ils pinent une version).
+This allows category evolution without breaking old agents (they pin a version).
 
 ---
 
-## 6. Réputation et griefing (annulations par contrepartie)
+## 6. Reputation and griefing (cancellations by counterparty)
 
-### Problème
-Un attaquant peut créer plusieurs PAs, accepter des deals avec un BA puis annuler pour dégrader son `cancellation_rate`.
+### Problem
+An attacker can create multiple PAs, accept deals with a BA then cancel to degrade their `cancellation_rate`.
 
-### Changement
+### Change
 
-- **Comptage par contrepartie** : Le `cancellation_rate_as_provider` (et équivalents) MUST être calculé en pondérant les annulations par **identité de contrepartie** : une même PA qui annule 10 fois compte comme une seule « contrepartie annulante » pour le ratio, pas 10. Formule indicative :
+- **Counterparty counting**: `cancellation_rate_as_provider` (and equivalents) MUST be calculated by weighting cancellations by **counterparty identity**: same PA canceling 10 times counts as one "canceling counterparty" for the ratio, not 10. Indicative formula:
   - `cancellation_rate = unique_cancelling_counterparties / unique_counterparties_with_deals`
-  ou variante qui limite l’impact d’un seul PA malveillant.
-- **Documentation** : SECURITY.md v0.2 décrit cette règle et recommande d’exposer `cancellation_rate_by_counterparty` (ou équivalent) pour que les PAs puissent évaluer un BA.
+  or variant that limits impact of single malicious PA.
+- **Documentation**: SECURITY.md v0.2 describes this rule and recommends exposing `cancellation_rate_by_counterparty` (or equivalent) so PAs can evaluate a BA.
 
 ---
 
-## 7. Conformité et implémentation
+## 7. Compliance and implementation
 
-### 7.1 Relais minimal conforme
+### 7.1 Minimal compliant relay
 
-Une implémentation de référence (Node ou Rust) MUST exister qui :
+A reference implementation (Node or Rust) MUST exist that:
 
-- Accepte des connexions WebSocket d’agents.
-- Enregistre les agents (PA/BA), route par catégorie + géo.
-- Envoie **delivery_ack** (nombre de BAs routés) après routage d’un RFQ.
-- Envoie **bid_commitment** (bid_count, bid_ids_hash, bids_content_hash) avant d’envoyer les bids au PA.
-- Génère des **deal** signés et des **deal_attestation** à la finalisation.
-- Valide les messages (signatures, TTL, tailles, champs anti-phishing).
-- N’implémente pas obligatoirement la fédération en v0.2 (peut être une phase suivante).
+- Accepts WebSocket connections from agents.
+- Registers agents (PA/BA), routes by category + geo.
+- Sends **delivery_ack** (number of routed BAs) after routing an RFQ.
+- Sends **bid_commitment** (bid_count, bid_ids_hash, bids_content_hash) before sending bids to PA.
+- Generates signed **deal** and **deal_attestation** at finalization.
+- Validates messages (signatures, TTL, sizes, anti-phishing fields).
+- Doesn't necessarily implement federation in v0.2 (can be next phase).
 
-Ce relais sert de référence pour les tests de conformité et la checklist SPEC_VS_POC.
+This relay serves as reference for conformance tests and SPEC_VS_POC checklist.
 
 ### 7.2 SPEC_VS_POC (documentation)
 
-Un document **SPEC_VS_POC.md** (dans `spec/` ou `doc/`) liste chaque exigence MUST/SHOULD de la spec v0.1 (et v0.2) avec le statut dans chaque implémentation :
+A **SPEC_VS_POC.md** document (in `spec/` or `doc/`) lists each MUST/SHOULD requirement from v0.1 spec (and v0.2) with status in each implementation:
 
-- **PoC demo** (relay-server.js actuel) : simulé / absent / partiel.
-- **Relais conforme v0.2** : implémenté / N/A.
+- **PoC demo** (current relay-server.js): simulated / absent / partial.
+- **v0.2 compliant relay**: implemented / N/A.
 
-Objectif : clarté pour les contributeurs et les partenaires sur ce qui est « démo » vs « conforme ».
+Goal: clarity for contributors and partners on what is "demo" vs "compliant".
 
-### 7.3 Tests de sécurité (CI)
+### 7.3 Security tests (CI)
 
-- Messages avec signature invalide → rejet.
-- TTL expiré → rejet.
-- Specs invalides (caractères de contrôle, champs trop longs, injection-like) → rejet.
-- Champs anti-phishing (URL, téléphone dans `location.name`) → rejet.
-- Rate limits (comportement attendu sous charge).
+- Messages with invalid signature → rejection.
+- Expired TTL → rejection.
+- Invalid specs (control chars, oversized fields, injection-like) → rejection.
+- Anti-phishing fields (URL, phone in `location.name`) → rejection.
+- Rate limits (expected behavior under load).
 
-Idéalement : fuzzer léger sur les schemas (génération de payloads invalides).
+Ideally: lightweight fuzzer on schemas (invalid payload generation).
 
 ### 7.4 SDK
 
-- **Sanitization** : Les SDK MUST fournir (et utiliser par défaut en affichage) une sanitization des champs affichés à l’utilisateur (strip URL, détection téléphone).
-- **Settlement proof** : Les SDK MUST permettre de remplir `settlement_proof` dans les receipts lorsque l’intégration paiement le fournit.
-- **Bid commitment** : Les clients PA MUST pouvoir vérifier `bids_content_hash` une fois les bids reçus.
+- **Sanitization**: SDKs MUST provide (and use by default for display) sanitization of user-displayed fields (strip URL, phone detection).
+- **Settlement proof**: SDKs MUST allow filling `settlement_proof` in receipts when payment integration provides it.
+- **Bid commitment**: PA clients MUST be able to verify `bids_content_hash` once bids received.
 
 ---
 
-## 8. Résumé des numéros de version
+## 8. Version summary
 
-| Composant      | v0.1        | v0.2        |
+| Component      | v0.1        | v0.2        |
 |----------------|------------|-------------|
 | Proto          | `intent/0.1` | `intent/0.2` |
 | Receipt        | fulfillment only | + `settlement_proof` |
-| Nouveau type   | —           | `deal_attestation` |
+| New type       | —           | `deal_attestation` |
 | bid_commitment | count + id hash | + `bids_content_hash` |
-| RFQ            | —           | + `category_schema_version` (optionnel) |
-| Contraintes    | specs + length | + anti-URL, anti-phone sur champs affichés |
-| Réputation     | cancellation_rate | + pondération par contrepartie |
-| Relais         | spec only   | + relais conforme de référence + attestations |
+| RFQ            | —           | + `category_schema_version` (optional) |
+| Constraints    | specs + length | + anti-URL, anti-phone on displayed fields |
+| Reputation     | cancellation_rate | + counterparty weighting |
+| Relay          | spec only   | + compliant reference relay + attestations |
 
 ---
 
-## 9. Ce qui reste hors scope v0.2 (reporté)
+## 9. Out of scope for v0.2 (deferred)
 
-- **Trust Web** (agents qui se vouchent) : reporté à une version ultérieure.
-- **Fédération multi-relais** : le format `via` et les attestations préparent la fédération ; une implémentation 2-relais peut être en « preview » mais n’est pas obligatoire pour valider v0.2.
-- **Actions étendues** (`hire`, `query`, `monitor`, `delegate`) : roadmap produit ; le protocole v0.2 reste compatible (même envelope, mêmes types de base).
-- **Stripe Connect / escrow** : intégration produit ; le protocole se contente de `settlement_proof` et des références.
+- **Trust Web** (agents vouching for each other): deferred to later version.
+- **Multi-relay federation**: `via` format and attestations prepare federation; 2-relay implementation can be "preview" but not mandatory for v0.2 validation.
+- **Extended actions** (`hire`, `query`, `monitor`, `delegate`): product roadmap; v0.2 protocol stays compatible (same envelope, same base types).
+- **Stripe Connect / escrow**: product integration; protocol settles for `settlement_proof` and references.
 
 ---
 
-*Ce document est le delta officiel v0.1 → v0.2. Les documents détaillés (PROTOCOL, SCHEMAS, SECURITY, RELAY) seront mis à jour pour refléter ces changements ; en attendant, les règles ci-dessus font autorité pour la v0.2.*
+*This document is the official v0.1 → v0.2 delta. Detailed documents (PROTOCOL, SCHEMAS, SECURITY, RELAY) will be updated to reflect these changes; meanwhile, above rules are authoritative for v0.2.*

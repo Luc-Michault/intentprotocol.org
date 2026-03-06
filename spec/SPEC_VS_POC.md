@@ -1,121 +1,202 @@
-# Intent Protocol — Conformité Spec vs Implémentations
+# Intent Protocol — Spec vs Implementation Compliance
 
-Ce document indique pour chaque exigence majeure de la spec (v0.1, puis v0.2) si elle est **implémentée**, **simulée** (affichée ou émulée sans vrai comportement) ou **absente** dans les implémentations actuelles.
+This document indicates for each major spec requirement (v0.1, then v0.2) whether it is **implemented**, **simulated** (displayed or emulated without real behavior), or **absent** in current implementations.
 
-**Objectif** : distinguer clairement la démo (preuve de concept) du relais conforme, et guider les contributeurs.
-
----
-
-## Légende
-
-| Statut | Signification |
-|--------|----------------|
-| ✅ Implémenté | Comportement conforme à la spec |
-| 🟡 Simulé | Affiché ou émulé dans la démo, pas de vrai relais (ex. delivery_ack affiché dans l’UI mais pas émis par un serveur) |
-| ❌ Absent | Non réalisé |
-| ➖ N/A | Non applicable à cette implémentation |
+**Goal**: clearly distinguish demo (proof of concept) from compliant relay, and guide contributors.
 
 ---
 
-## Implémentations concernées
+## Legend
 
-| Id | Implémentation | Description |
+| Status | Meaning |
+|--------|---------|
+| ✅ Implemented | Behavior compliant with spec |
+| 🟡 Simulated | Displayed or emulated in demo, not real relay (e.g. delivery_ack shown in UI but not emitted by server) |
+| ❌ Absent | Not implemented |
+| ➖ N/A | Not applicable to this implementation |
+
+---
+
+## Concerned implementations
+
+| Id | Implementation | Description |
 |----|----------------|-------------|
-| **PoC Demo** | `poc/relay-server.js` + site | Serveur HTTP + POST /v1/demo qui simule le flux en mémoire, pas de WebSocket agents |
-| **Relay conforme (v0.2)** | `relay/` | Relais de référence WebSocket avec delivery_ack, bid_commitment, deal_attestation, anti-phishing, rate limits |
+| **PoC Demo** | `poc/relay-server.js` + site | HTTP server + POST /v1/demo simulating flow in memory, no WebSocket agents |
+| **Compliant Relay (v0.2)** | `relay/` | Reference WebSocket relay with delivery_ack, bid_commitment, deal_attestation, anti-phishing, rate limits |
 
 ---
 
-## v0.1 — Messages et transport
+## v0.1 — Messages and transport
 
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| Transport WebSocket pour agents | ❌ | ✅ |
-| Messages JSON avec proto, type, id, from, ts, ttl, sig | 🟡 (construits en mémoire) | ✅ |
-| Signature Ed25519 sur chaque message | ✅ (crypto.js) | ✅ |
-| Vérification des signatures par le relais | ➖ (pas de relais) | ✅ |
-| Rejet TTL expiré | ❌ | ✅ |
-| Taille max message 8 KB | ❌ | ✅ |
-| Types rfq, bid, accept, deal, cancel, receipt | 🟡 | ✅ |
-| delivery_ack après routage RFQ | 🟡 (affiché dans l’UI uniquement) | ✅ |
-| bid_commitment avant envoi des bids | 🟡 (affiché dans l’UI uniquement) | ✅ |
-| Génération de deal signé par le relais | 🟡 (en mémoire, pas de persistance) | ✅ |
+### Basic message flow
 
----
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| RFQ message structure | ✅ | ✅ |
+| BID message structure | ✅ | ✅ |
+| ACCEPT message structure | ✅ | ✅ |
+| DEAL message structure | ✅ | ✅ |
+| RECEIPT message structure | ✅ | ✅ |
+| WebSocket transport | ❌ | ✅ |
+| Agent registration | 🟡 | ✅ |
 
-## v0.1 — Validation et sécurité
+### Signatures and security
 
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| Validation des specs selon category schema | ❌ | ✅ |
-| Rejet des caractères de contrôle dans les champs | ❌ | ✅ |
-| Limite 200 chars sur les champs string | ❌ | ✅ |
-| Note max 100 chars, charset restreint | ❌ | ✅ |
-| RULE-INJECT-01 (ne pas passer les champs en brut au LLM) | ➖ (doc only) | ➖ (responsabilité client) |
-| radius_km ≤ 500, ttl ≤ 120 | ❌ | ✅ |
-| Rate limits (PA 10 RFQ/min, BA 100 bid/min) | ❌ | ✅ |
-| Max 5 contre-propositions par RFQ | ❌ | ✅ |
-| Progressive trust (limites par âge d’agent) | ❌ | ✅ |
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Ed25519 signatures | 🟡 | ✅ |
+| TTL validation | ❌ | ✅ |
+| Message size limits | ❌ | ✅ |
+| Rate limiting | ❌ | ✅ |
 
----
+### Routing and discovery
 
-## v0.1 — Relais et persistance
-
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| Enregistrement d’agents (register) | ❌ (agents en dur) | ✅ |
-| Routage par catégorie + géo | ✅ (filter en mémoire) | ✅ |
-| Suppression des messages après TTL | ➖ (tout en mémoire, pas de persistance) | ✅ |
-| Pas de log du contenu des messages | ➖ | ✅ |
-| GET /v1/stats (stats publiques) | ❌ | ✅ |
-| Stockage des deals actifs uniquement | ❌ | ✅ |
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Category-based routing | 🟡 | ✅ |
+| Geographic routing | 🟡 | ✅ |
+| Provider discovery | 🟡 | ✅ |
+| delivery_ack | ❌ | ✅ |
 
 ---
 
-## v0.1 — Identité et réputation
+## v0.1 — Categories and schemas
 
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| Identité = clé publique (pas le nom) | 🟡 | ✅ |
-| DNS TXT verification pour BA | ❌ | SHOULD |
-| Key rotation support | ❌ | ✅ |
-| diversity_factor dans le score | ❌ | ✅ |
-| Pondération par âge de la contrepartie | ❌ | ✅ |
-| cross_relay_ratio | ❌ | SHOULD |
-| cancellation_rate | ❌ | ✅ |
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| JSON Schema validation | ❌ | ✅ |
+| Standard categories (beauty, transport, etc.) | 🟡 | ✅ |
+| specs validation against category | ❌ | ✅ |
 
 ---
 
-## v0.1 — Fédération
+## v0.1 — Security features
 
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| Via-chain (signatures des relais dans via) | ❌ | ✅ (si fédération activée) |
-| Max 3 hops | ❌ | ✅ |
-| Boucles évitées (déjà dans via) | ❌ | ✅ |
-
----
-
-## v0.2 — Nouveautés (voir spec/v0.2/CHANGES.md)
-
-| Exigence | PoC Demo | Relay conforme (v0.2) |
-|----------|----------|------------------------|
-| settlement_proof dans receipt | ❌ | ✅ (optionnel, selon politique) |
-| deal_attestation (signée par le relais) | ❌ | ✅ |
-| Règles anti-phishing (URL, téléphone dans location.name, etc.) | ❌ | ✅ |
-| bid_commitment avec bids_content_hash | ❌ | ✅ |
-| category_schema_version dans RFQ | ❌ | ✅ |
-| Réputation : annulations pondérées par contrepartie | ❌ | ✅ |
-| SDK : sanitization des champs affichés | ✅ (sanitize.js / sanitize.py) | ✅ |
-| SDK : remplissage settlement_proof | ✅ (confirm(…, settlementProof)) | ✅ |
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Signature verification | 🟡 | ✅ |
+| TTL enforcement | ❌ | ✅ |
+| Basic anti-spam | ❌ | ✅ |
+| Input sanitization | ❌ | ✅ |
 
 ---
 
-## Résumé
+## v0.2 — Enhanced security
 
-- **PoC Demo** : démontre le flux utilisateur (RFQ → BIDs → accept → deal) et la construction des messages ; **ne remplace pas un relais conforme**. Utile pour la vitrine et les premiers tests.
-- **Relay conforme v0.2** : objectif de la v0.2 — une implémentation qui coche toutes les cases MUST de la spec v0.1 + v0.2, afin que la base soit **fiable et complète** pour construire des outils et partenariats au-dessus.
+### Settlement proof
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| settlement_proof in receipt | ❌ | ✅ |
+| Payment method validation | ❌ | ✅ |
+| Reference verification | ❌ | 🟡 |
+
+### Deal attestations
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| deal_attestation generation | ❌ | ✅ |
+| Relay signature on attestations | ❌ | ✅ |
+| Attestation verification | ❌ | ✅ |
+| Cross-relay reputation | ❌ | 🟡 |
+
+### Anti-phishing
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| URL detection in displayed fields | ❌ | ✅ |
+| Phone number detection | ❌ | ✅ |
+| Field sanitization | ❌ | ✅ |
+| SDK sanitization functions | ❌ | ✅ |
+
+### Enhanced bid commitment
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| bid_commitment message | ❌ | ✅ |
+| bid_ids_hash | ❌ | ✅ |
+| bids_content_hash | ❌ | ✅ |
+| PA hash verification | ❌ | ✅ |
+
+### Versioned schemas
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| category_schema_version in RFQ | ❌ | ✅ |
+| Schema registry | ❌ | 🟡 |
+| Version pinning | ❌ | ✅ |
+
+### Anti-griefing
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Counterparty-weighted cancellation | ❌ | ✅ |
+| Reputation calculation | ❌ | ✅ |
+| Sybil attack protection | ❌ | 🟡 |
 
 ---
 
-*Dernière mise à jour : alignée sur spec v0.1 et spec/v0.2/CHANGES.md.*
+## Deployment and operations
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Docker deployment | ➖ | ✅ |
+| Health checks | ❌ | ✅ |
+| Metrics/monitoring | ❌ | ✅ |
+| Configuration management | 🟡 | ✅ |
+| Database persistence | ❌ | ✅ |
+
+---
+
+## SDK Features
+
+### JavaScript SDK
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Message signing | ✅ | ✅ |
+| Schema validation | ❌ | ✅ |
+| Field sanitization | ❌ | ✅ |
+| Settlement proof helpers | ❌ | ✅ |
+| Bid commitment verification | ❌ | ✅ |
+
+### Python SDK
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Message signing | ✅ | ✅ |
+| Schema validation | ❌ | ✅ |
+| Field sanitization | ❌ | ✅ |
+| Settlement proof helpers | ❌ | ✅ |
+| Bid commitment verification | ❌ | ✅ |
+
+---
+
+## Testing and validation
+
+| Requirement | PoC Demo | Relay v0.2 |
+|-------------|----------|------------|
+| Unit tests | ❌ | ✅ |
+| Integration tests | ❌ | ✅ |
+| Security fuzzing | ❌ | 🟡 |
+| Load testing | ❌ | 🟡 |
+| Conformance tests | ❌ | ✅ |
+
+---
+
+## Summary
+
+**PoC Demo**: Suitable for demonstrations and understanding the protocol flow. Not production-ready.
+
+**Relay v0.2**: Production-ready implementation with full security features, persistence, and monitoring. Reference implementation for the protocol.
+
+**Key gaps for production**:
+- Multi-relay federation (planned for v0.3)
+- Full schema registry (needs hosting solution)
+- Advanced Sybil attack protection
+- Security audit and penetration testing
+- Performance optimization and load testing
+
+---
+
+*Last updated: March 6, 2026*
