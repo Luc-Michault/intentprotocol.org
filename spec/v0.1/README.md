@@ -12,11 +12,12 @@ The Intent Protocol (IP) is an open standard for AI agent-to-agent negotiation a
 ## Design Principles
 
 1. **Simple first** — JSON over WebSocket. A junior dev can implement a basic agent in an afternoon.
-2. **No blockchain required** — Settlement is pluggable. Stripe, bank transfer, crypto, cash — the protocol doesn't care.
-3. **No token required** — The protocol runs on standard currencies. No proprietary token tax.
+2. **Pluggable settlement** — Stripe, bank transfer, crypto escrow, cash, invoice — bring your own payment layer.
+3. **Currency-agnostic** — The protocol works with any currency (EUR, USD, BTC, USDC). No proprietary token.
 4. **Federated, not centralized** — Anyone can run a relay. Relays sync with each other. Like email.
-5. **No LLM in the loop** — The LLM translates human intent into structured JSON *before* the protocol. The protocol itself is deterministic matching — fast and free.
+5. **Deterministic negotiation** — The LLM translates human intent into structured JSON *before* the protocol. The protocol itself is deterministic matching — fast and free.
 6. **Privacy by default** — Agents negotiate pseudonymously. Real identities revealed only at settlement, only to counterparty.
+7. **Security-first** — Ed25519 signatures on every message. Anti-Sybil reputation. Structured schemas prevent prompt injection.
 
 ## Documents
 
