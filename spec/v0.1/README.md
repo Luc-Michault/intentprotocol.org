@@ -36,7 +36,7 @@ Human: "Find me a haircut tomorrow at 2pm, under 30€, within 2km"
     ↓ (LLM translates to structured intent)
 Agent A → Relay: RFQ { category: "haircut", budget: 30, when: "2026-03-06T14:00" }
     ↓ (relay routes to matching business agents)
-Agent B → Agent A: BID { price: 28, when: "14:30", service: "Coupe homme" }
+Agent B → Agent A: BID { price: 28, when: "14:30", service: "Mens haircut" }
 Agent C → Agent A: BID { price: 32, when: "14:00" } ← rejected (over budget)
     ↓ (agent A selects best bid)
 Agent A ↔ Agent B: DEAL { signed terms }
@@ -56,7 +56,7 @@ Done. 3 messages. < 1 second.
          │                 │                 │
    ┌─────┴─────┐    ┌─────┴─────┐    ┌─────┴─────┐
    │  Relay    │    │  Relay    │    │  Relay    │
-   │  (Pau)   │    │ (Berlin) │    │ (London) │
+   │  (Paris)   │    │ (Berlin) │    │ (London) │
    └─────┬─────┘    └─────┬─────┘    └─────┬─────┘
          │                 │                 │
     ┌────┴────┐       ┌────┴────┐       ┌────┴────┐

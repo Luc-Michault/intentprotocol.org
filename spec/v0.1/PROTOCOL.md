@@ -145,7 +145,7 @@ When an RFQ arrives, the relay matches:
 
 ### 7.2 Federation routing
 If no local BA matches, the relay forwards the RFQ to federated relays:
-- Relay A (Pau) → Relay B (Bordeaux) if geo radius extends there
+- Relay A (Paris) → Relay B (Berlin) if geo radius extends there
 - Max federation hops: 3 (prevents infinite propagation)
 - Each relay adds itself to a `via` array to prevent loops
 

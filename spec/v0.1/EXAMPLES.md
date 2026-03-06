@@ -2,7 +2,7 @@
 
 ## Example 1: Haircut Booking (Simple)
 
-> "Trouve-moi un coiffeur demain à 14h, max 30€, à moins de 2km"
+> "Find me a haircut tomorrow at 2pm, under €30, within 2km"
 
 ### Step 1: RFQ
 ```json
@@ -10,7 +10,7 @@
   "proto": "intent/0.1",
   "type": "rfq",
   "id": "01JR0001",
-  "from": "agent:jarvis@relay.openclaw.ai",
+  "from": "agent:alice@relay.openclaw.ai",
   "ts": 1741276800,
   "ttl": 30,
   "sig": "ed25519:...",
@@ -18,9 +18,9 @@
     "action": "book",
     "category": "services.beauty.haircut",
     "when": { "after": "2026-03-06T13:00Z", "before": "2026-03-06T15:00Z", "prefer": "earliest" },
-    "where": { "lat": 43.295, "lon": -0.370, "radius_km": 2, "mode": "provider_location" },
+    "where": { "lat": 48.86, "lon": 2.35, "radius_km": 2, "mode": "provider_location" },
     "budget": { "max": 30, "currency": "EUR", "prefer": "cheapest" },
-    "specs": { "service": "coupe homme" }
+    "specs": { "service": "mens_haircut" }
   }
 }
 ```
@@ -28,24 +28,24 @@
 ### Step 2: Bids (3 received in ~200ms)
 ```json
 // Salon A — too expensive, auto-rejected by PA
-{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-a@relay.pau.fr",
+{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-a@relay.paris.fr",
   "offer": { "price": 35, "currency": "EUR", "when": "2026-03-06T14:00Z" } }
 
 // Salon B — within budget, good time
-{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-b@relay.pau.fr",
+{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-b@relay.paris.fr",
   "offer": { "price": 28, "currency": "EUR", "when": "2026-03-06T14:30Z",
-             "service": "Coupe homme", "duration_min": 30 },
+             "service": "Mens haircut", "duration_min": 30 },
   "reputation": { "deals_completed": 847, "rating_avg": 4.7 } }
 
 // Salon C — cheapest but lower rated
-{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-c@relay.pau.fr",
+{ "type": "bid", "ref": "01JR0001", "from": "agent:salon-c@relay.paris.fr",
   "offer": { "price": 22, "currency": "EUR", "when": "2026-03-06T14:00Z" },
   "reputation": { "deals_completed": 45, "rating_avg": 3.8 } }
 ```
 
 ### Step 3: Accept (PA selects Salon B — best price/quality ratio)
 ```json
-{ "type": "accept", "ref": "bid_salon_b", "from": "agent:jarvis@relay.openclaw.ai",
+{ "type": "accept", "ref": "bid_salon_b", "from": "agent:alice@relay.openclaw.ai",
   "settlement": { "method": "direct", "pay_at": "on_site" } }
 ```
 
@@ -56,7 +56,7 @@
 
 ## Example 2: Restaurant Reservation (with negotiation)
 
-> "Réserve-moi un restaurant italien ce soir pour 2, budget 80€ max, terrasse si possible"
+> "Book an Italian restaurant tonight for 2, budget €80 max, terrace if possible"
 
 ### Step 1: RFQ
 ```json
@@ -66,9 +66,9 @@
     "action": "book",
     "category": "services.food.restaurant",
     "when": { "after": "2026-03-06T19:00Z", "before": "2026-03-06T21:00Z" },
-    "where": { "lat": 43.295, "lon": -0.370, "radius_km": 5 },
+    "where": { "lat": 48.86, "lon": 2.35, "radius_km": 5 },
     "budget": { "max": 80, "currency": "EUR" },
-    "specs": { "cuisine": "italian", "guests": 2, "preferences": ["terrasse"] },
+    "specs": { "cuisine": "italian", "guests": 2, "preferences": ["terrace"] },
     "quantity": 1
   }
 }
@@ -76,13 +76,13 @@
 
 ### Step 2: Bids
 ```json
-// Trattoria Roma — terrace available, 70€ menu
+// Trattoria Roma — terrace available, €70 menu
 { "offer": { "price": 70, "when": "2026-03-06T19:30Z", "guests": 2,
-             "details": "Menu dégustation 4 plats", "terrace": true } }
+             "details": "4-course tasting menu", "terrace": true } }
 
 // Pasta e Basta — no terrace but 20:00 slot
 { "offer": { "price": 55, "when": "2026-03-06T20:00Z", "guests": 2,
-             "terrace": false, "indoor_note": "Salle voûtée intimiste" } }
+             "terrace": false, "indoor_note": "Intimate vaulted dining room" } }
 ```
 
 ### Step 3: PA counter-offers Trattoria (wants 19:00 not 19:30)
@@ -103,7 +103,7 @@
 
 ## Example 3: Emergency Plumber (urgent, with escrow)
 
-> "J'ai une fuite d'eau urgente, j'ai besoin d'un plombier MAINTENANT"
+> "I have a water leak, I need a plumber NOW"
 
 ### Step 1: RFQ (urgent flag, high budget tolerance)
 ```json
@@ -113,7 +113,7 @@
     "action": "hire",
     "category": "services.home.plumber",
     "when": { "after": "now", "before": "+2h", "prefer": "fastest" },
-    "where": { "lat": 43.295, "lon": -0.370, "radius_km": 10, "mode": "client_location" },
+    "where": { "lat": 48.86, "lon": 2.35, "radius_km": 10, "mode": "client_location" },
     "budget": { "max": 200, "currency": "EUR", "prefer": "fastest" },
     "specs": { "issue": "water_leak", "urgency": "emergency", "access": "house" }
   }
@@ -122,7 +122,7 @@
 
 ### Step 2: Single bid (plumber available in 20min)
 ```json
-{ "offer": { "price": 120, "eta_min": 20, "service": "Dépannage fuite",
+{ "offer": { "price": 120, "eta_min": 20, "service": "Emergency leak repair",
              "conditions": { "diagnostic_included": true, "parts_extra": true } } }
 ```
 
@@ -136,13 +136,13 @@
 ```json
 // Plumber receipt
 { "type": "receipt", "fulfillment": { "completed": true, "actual_price": 120,
-  "parts_used": [{"name": "Joint 3/4", "price": 8}], "total_with_parts": 128 } }
+  "parts_used": [{"name": "3/4 gasket", "price": 8}], "total_with_parts": 128 } }
 
 // Client receipt
 { "type": "receipt", "fulfillment": { "completed": true, "rating_provider": 5 } }
 ```
 
-**Escrow releases 128€ to plumber. Deal fulfilled.**
+**Escrow releases €128 to plumber. Deal fulfilled.**
 
 ---
 
@@ -161,7 +161,7 @@
     "where": { "mode": "remote" },
     "budget": { "max": 1500, "currency": "EUR" },
     "specs": { "skills": ["typescript", "react", "nextjs"], "experience_years_min": 3,
-               "language": "fr", "timezone": "Europe/Paris" }
+               "language": "en", "timezone": "Europe/Paris" }
   }
 }
 ```
@@ -231,21 +231,21 @@
 
 ## Example 6: Information Request (zero settlement)
 
-> "Quels sont les horaires de la piscine municipale ?"
+> "What are the opening hours for the community pool?"
 
 ```json
 // RFQ
 { "type": "rfq",
   "intent": { "action": "info", "category": "services.leisure.pool",
-              "where": { "lat": 43.3, "lon": -0.37, "radius_km": 5 },
+              "where": { "lat": 48.86, "lon": 2.35, "radius_km": 5 },
               "specs": { "query": "opening_hours" } } }
 
 // Response (not a bid — just info)
 { "type": "bid",
   "offer": { "price": 0, "info": {
-    "name": "Piscine Municipale de Pau",
+    "name": "Municipal Pool",
     "hours": { "mon-fri": "07:00-21:00", "sat": "08:00-19:00", "sun": "09:00-17:00" },
-    "prices": { "adult": 4.50, "child": 2.80, "carnet_10": 36 } } },
+    "prices": { "adult": 4.50, "child": 2.80, "pack_10": 36 } } },
   "settlement": { "method": "none" } }
 ```
 

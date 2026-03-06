@@ -49,7 +49,7 @@ REST API:
 ```json
 POST /v1/register
 {
-  "agent_id": "agent:salon-bella@relay.pau.fr",
+  "agent_id": "agent:salon-bella@relay.paris.fr",
   "pubkey": "ed25519:abc123...",
   "type": "business",
   "profile": {
@@ -139,7 +139,7 @@ Relays discover each other via:
   "type": "rfq",
   "id": "01JQXYZ123ABC",
   "from": "agent:jarvis@relay.openclaw.ai",
-  "via": ["relay.openclaw.ai", "relay.pau.fr"],
+  "via": ["relay.openclaw.ai", "relay.paris.fr"],
   "ts": 1741276800,
   "ttl": 25,
   "sig": "ed25519:...",
@@ -158,7 +158,7 @@ Rules:
 Bids follow the reverse `via` path back to the originating relay:
 
 ```
-BA (Bordeaux) → Relay Bordeaux → Relay Pau → Relay OpenClaw → PA
+BA (Berlin) → Relay Berlin → Relay Paris → Relay OpenClaw → PA
 ```
 
 Each relay in the chain forwards the bid to the previous hop.
