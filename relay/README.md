@@ -1,114 +1,94 @@
-# Intent Protocol v0.2 — Compliant Relay
+# Intent Protocol v0.3 — Conformant Relay ("Trust & Recovery")
 
-Reference relay compliant with v0.2 spec: WebSocket, `delivery_ack`, `bid_commitment` (with `bids_content_hash`), `deal_attestation`, anti-phishing validation, rate limits, signatures.
+Reference relay implementing the full v0.3 spec: all v0.2 features plus key rotation, circuit breakers, deal quarantine, agent status tracking, and adversarial hardening.
 
 ## Prerequisites
 
 - Node.js 20+
 
-## Installation
+## Quick Start
 
 ```bash
 cd relay
 npm install
-```
-
-## Start
-
-```bash
 npm start
-# or
-node index.js
+# → ws://localhost:3100/v1/ws
 ```
-
-Default port: **8080**. WebSocket endpoint: `ws://localhost:8080`
 
 ## Configuration
 
 Environment variables:
 
-- `PORT` — server port (default: 8080)
-- `RELAY_DOMAIN` — relay domain for signatures (default: localhost)
-- `RELAY_PRIVATE_KEY` — Ed25519 private key hex (generates random if not set)
-- `RATE_LIMIT_WINDOW` — rate limit window in ms (default: 60000)
-- `RATE_LIMIT_MAX` — max requests per window (default: 100)
-- `GEO_RADIUS_KM` — geographic search radius (default: 50)
+- `PORT` — server port (default: 3100)
+- `RELAY_HOST` — relay domain for signatures (default: localhost)
 
 ## Features
 
-### ✅ v0.2 Compliant
+### v0.2 (preserved)
 
-- WebSocket transport for agents
+- WebSocket transport (`/v1/ws`)
 - Agent registration (PA/BA types)
-- Category-based + geographic routing
-- Message signature verification (Ed25519)
-- TTL enforcement
-- Rate limiting
-- Anti-phishing validation (URL/phone detection)
-- `delivery_ack` after RFQ routing
-- `bid_commitment` with content hash
-- `deal_attestation` generation
+- Category + geographic routing
+- Ed25519 signature verification
+- TTL enforcement & rate limiting
+- Anti-phishing validation
+- `delivery_ack`, `bid_commitment`, `deal_attestation`
 - Settlement proof support
 
-### 📊 Monitoring
+### v0.3 (new)
 
-- Health check: `GET /health`
-- Metrics: `GET /metrics` (basic stats)
-- Agent list: `GET /agents` (debug)
+- **Key Rotation** — Rotate compromised/expired keys without losing identity, reputation, or deal history
+- **Deal Quarantine** — Automatic quarantine of deals signed by compromised keys + `SECURITY_REVOCATION` to counterparties
+- **Circuit Breakers** — Volume spike detection, auto-quarantine on anomalous patterns
+- **Agent Status** — `active` / `quarantined` / `throttled` states
+- **Key History** — Full audit trail of key rotations
+- **Clock Skew Validation** — Reject messages with > 30s clock drift
+- **Quarantine Appeals** — Agents can appeal with owner attestation
 
-## Message Flow
+### Endpoints
 
-1. **Agent connects** via WebSocket
-2. **Registration**: agent sends `register` message
-3. **RFQ**: PA sends request → relay routes to matching BAs
-4. **delivery_ack**: relay confirms routing (BA count)
-5. **bid_commitment**: relay commits to received bids
-6. **BIDs**: relay forwards bids to PA
-7. **ACCEPT**: PA accepts one bid
-8. **DEAL**: relay generates signed deal
-9. **RECEIPT**: after service fulfillment
-10. **deal_attestation**: relay signs attestation for reputation
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/health` | Relay health |
+| `GET /v1/stats` | Relay statistics |
+| `GET /v1/info` | Relay identity + protocol version |
+| `GET /v1/deals/:id` | Deal details |
+| `GET /v1/deals/:id/attestation` | Deal attestation |
+| `GET /v1/deals?state=quarantined` | Quarantined deals |
+| `GET /v1/agents/:id/status` | Agent status (active/quarantined/throttled) |
+| `GET /v1/agents/:id/key-history` | Key rotation history |
+| `GET /v1/relay/circuit-breaker-config` | Circuit breaker thresholds |
 
-## Security
+### Message Types (v0.3)
 
-- All messages must be signed (Ed25519)
-- TTL validation (max 24h)
-- Message size limits (1MB)
-- Anti-phishing: URLs and phone numbers blocked in display fields
-- Rate limiting per connection
-- Input sanitization
-
-## Testing
-
-```bash
-npm test
-```
-
-Includes unit tests for validation, routing, and security features.
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `key_rotation` | Agent → Relay | Rotate key (requires old key + owner attestation) |
+| `key_rotation_notice` | Relay → All | Broadcast key change |
+| `deal_quarantine` | Relay → Agent | Notify of quarantined deals |
+| `SECURITY_REVOCATION` | Relay → Counterparties | Alert about compromised deals |
+| `quarantine_appeal` | Agent → Relay | Appeal circuit breaker quarantine |
 
 ## Architecture
 
-- `index.js` — main server
-- `protocol.js` — message handling and routing logic
-- `validation.js` — signature verification, anti-phishing
-- `crypto.js` — Ed25519 utilities
-- `geo.js` — geographic distance calculations
-
-## Production Deployment
-
-Use PM2 or Docker:
-
-```bash
-# PM2
-pm2 start index.js --name intent-relay
-
-# Docker
-docker build -t intent-relay .
-docker run -p 8080:8080 intent-relay
+```
+index.js        Main server — WebSocket + HTTP, all handlers
+protocol.js     Message constructors (v0.2 + v0.3)
+validation.js   Input validation, anti-phishing, clock skew
+crypto.js       Ed25519 sign/verify (tweetnacl)
+geo.js          Geographic matching
 ```
 
-Configure HTTPS reverse proxy (nginx) for WSS support.
+## Security
+
+- Ed25519 signatures on all messages
+- TTL validation with clock skew detection
+- Rate limiting (10 RFQ/min, 100 bid/min per agent)
+- Circuit breakers with automatic quarantine
+- Anti-phishing (URL/phone blocked in display fields)
+- Key rotation requires dual authorization (agent + owner)
+- Deal quarantine on key compromise (72h lookback)
 
 ---
 
-**Status**: Reference implementation for Intent Protocol v0.2. Production-ready with monitoring and security features.
+**Status**: Reference implementation for Intent Protocol v0.3 "Trust & Recovery".

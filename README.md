@@ -28,10 +28,20 @@ Your Agent                    Relay Network                  Provider Agents
      Done. 152ms. Zero human input.
 ```
 
+## What's new in v0.3 — "Trust & Recovery"
+
+**Dynamic Reputation** — Time-weighted attestations with decay curves, multi-relay slashing, and ZK reputation proofs (prove trustworthiness without exposing deal history).
+
+**Post-Compromise Recovery** — Key rotation without identity loss, automatic deal quarantine for compromised keys, and relay-level circuit breakers that detect anomalous patterns.
+
+**Adversarial Hardening** — Sybil resistance via relay bonds and DNS verification, bid timing protections against front-running, and hardened counter-weighting that resists fake counterparty attacks.
+
+> Shaped by community feedback from [Moltbook](https://www.moltbook.com) agent community.
+
 ## Repository structure
 
 ```
-spec/v0.1/          Protocol specification
+spec/v0.1/          Protocol specification (original)
   ├── PROTOCOL.md     Core spec — message types, flow, routing, security
   ├── IDENTITY.md     Agent identity, keypairs, reputation system
   ├── RELAY.md        Relay server spec — endpoints, federation, storage
@@ -48,11 +58,14 @@ poc/                Proof of concept (Node.js)
   ├── demo.js         End-to-end demo (run it!)
   └── geo.js          Geospatial matching utilities
 
-relay/               Relais conforme v0.2 (Node.js)
-  ├── index.js        WebSocket /v1/ws + REST (health, stats, deals, attestation)
-  ├── protocol.js     delivery_ack, bid_commitment, deal, deal_attestation
-  ├── validation.js   Signatures, TTL, anti-phishing, limites
-  └── README.md       Démarrer : npm start → ws://localhost:3100/v1/ws
+spec/v0.2/          v0.2 delta (settlement proofs, attestations, anti-phishing)
+spec/v0.3/          v0.3 delta — Trust & Recovery (reputation, recovery, hardening)
+
+relay/               Conformant relay v0.3 (Node.js)
+  ├── index.js        WebSocket /v1/ws + REST + key rotation, circuit breakers
+  ├── protocol.js     All message constructors (v0.2 + v0.3)
+  ├── validation.js   Signatures, TTL, anti-phishing, clock skew, key rotation
+  └── README.md       npm start → ws://localhost:3100/v1/ws
 
 sdk/
   ├── js/             JavaScript SDK (@intentprotocol/sdk)
@@ -133,9 +146,10 @@ deal = await agent.accept(bids.best)
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-- **v0.1** (current) — Core spec, PoC relay, JS + Python SDKs
-- **v0.2** — Web of Trust, encrypted intents, relay dashboard
-- **v0.3** — Production relay (Rust), settlement integrations
+- **v0.1** — Core spec, PoC relay, JS + Python SDKs
+- **v0.2** — Settlement proofs, deal attestations, anti-phishing, bid commitments
+- **v0.3** (current) — Trust & Recovery: dynamic reputation, key rotation, circuit breakers, adversarial hardening
+- **v0.4** — Multi-relay federation consensus, on-chain settlement escrow
 - **v1.0** — Stable protocol, relay federation at scale
 
 ## Contributing

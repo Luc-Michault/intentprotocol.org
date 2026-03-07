@@ -1,7 +1,7 @@
 import { ulid } from 'ulid';
 import { sign, sha256Hex } from './crypto.js';
 
-const PROTO = 'intent/0.2';
+const PROTO = 'intent/0.3';
 
 function relayMessage(type, relayId, relaySecretKey, payload, ref = null) {
   const body = {
@@ -71,6 +71,36 @@ export function makeDeal(rfq, bid, accept, relayId, relaySecretKey) {
     state: 'PENDING',
   };
   return relayMessage('deal', relayId, relaySecretKey, { deal }, rfq.id);
+}
+
+// ── v0.3 Message Constructors ─────────────────────────
+
+export function makeKeyRotationNotice(relayId, relaySecretKey, agentId, oldPubkey, newPubkey, reason) {
+  return relayMessage('key_rotation_notice', relayId, relaySecretKey, {
+    agent: agentId,
+    old_pubkey: oldPubkey,
+    new_pubkey: newPubkey,
+    reason,
+  });
+}
+
+export function makeDealQuarantine(relayId, relaySecretKey, agentId, compromisedKey, affectedDealIds, windowStart, windowEnd) {
+  return relayMessage('deal_quarantine', relayId, relaySecretKey, {
+    agent: agentId,
+    compromised_key: compromisedKey,
+    affected_deal_ids: affectedDealIds,
+    quarantine_start: windowStart,
+    quarantine_end: windowEnd,
+  });
+}
+
+export function makeSecurityRevocation(relayId, relaySecretKey, agentId, affectedDealIds) {
+  return relayMessage('SECURITY_REVOCATION', relayId, relaySecretKey, {
+    agent: agentId,
+    affected_deal_ids: affectedDealIds,
+    action: 'settlements_frozen',
+    instructions: 'Manual review required for quarantined deals.',
+  });
 }
 
 export function makeDealAttestation(relayId, relaySecretKey, dealId, rfqId, client, provider, amount, currency, state = 'FULFILLED') {

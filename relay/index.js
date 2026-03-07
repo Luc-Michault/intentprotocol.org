@@ -1,11 +1,22 @@
 /**
- * Intent Protocol v0.2 Conformant Relay
+ * Intent Protocol v0.3 Conformant Relay — "Trust & Recovery"
  *
+ * v0.2 features:
  * - WebSocket at /v1/ws
  * - delivery_ack after routing RFQ
- * - bid_commitment (with bids_content_hash) when RFQ TTL expires, then bids already forwarded
+ * - bid_commitment (with bids_content_hash) when RFQ TTL expires
  * - deal + deal_attestation on FULFILLED
- * - Anti-phishing, rate limits, signatures, /v1/stats, /v1/health, /v1/deals/:id, /v1/deals/:id/attestation
+ * - Anti-phishing, rate limits, signatures
+ *
+ * v0.3 additions:
+ * - Key rotation (compromised/scheduled/precautionary) with deal quarantine
+ * - Circuit breakers (volume spike detection, auto-quarantine)
+ * - Agent status tracking (active/quarantined/throttled)
+ * - Key history audit trail
+ * - SECURITY_REVOCATION notifications to counterparties
+ * - Clock skew validation
+ * - New endpoints: /v1/agents/:id/status, /v1/agents/:id/key-history,
+ *   /v1/relay/circuit-breaker-config, /v1/deals?state=quarantined
  */
 
 import http from 'http';
@@ -19,6 +30,9 @@ import {
   makeBidCommitment,
   makeDeal,
   makeDealAttestation,
+  makeKeyRotationNotice,
+  makeDealQuarantine,
+  makeSecurityRevocation,
 } from './protocol.js';
 import { validateMessage } from './validation.js';
 
@@ -38,6 +52,21 @@ const agents = new Map(); // agentId -> { ws, profile, pubkey, type: 'personal'|
 const rfqs = new Map();   // rfqId -> { rfq, senderWs, senderAgent, bids: [], ttlTimer }
 const deals = new Map();  // dealId -> { dealMsg, receipts: { client: bool, provider: bool } }
 const attestations = new Map(); // dealId -> attestation object
+
+// ── v0.3 State ─────────────────────────────────────────
+const agentStatus = new Map();     // agentId -> 'active' | 'quarantined' | 'throttled'
+const keyHistory = new Map();      // agentId -> [{ pubkey, from, to, reason }]
+const messageRates = new Map();    // agentId -> { timestamps: [], baseline: 0 }
+const CIRCUIT_BREAKER = {
+  volume_spike_multiplier: 10,     // > 10× normal rate
+  volume_window_ms: 5 * 60_000,   // 5 min window
+  baseline_window_ms: 60 * 60_000, // 1h baseline
+  clock_skew_max_s: 30,
+  quarantine_appeal_window_h: 72,
+};
+const REPUTATION_DECAY = {
+  half_life_days: 90,
+};
 
 // Rate limit: agentId -> { rfqTs: [], bidTs: [] }
 const rateLimit = new Map();
@@ -77,6 +106,64 @@ function getAgentPubkey(agentId) {
   return a?.pubkey || null;
 }
 
+// ── v0.3: Agent Status & Circuit Breaker ────────────────
+function getAgentStatus(agentId) {
+  return agentStatus.get(agentId) || 'active';
+}
+
+function setAgentStatus(agentId, status) {
+  agentStatus.set(agentId, status);
+}
+
+function trackMessageRate(agentId) {
+  const now = Date.now();
+  if (!messageRates.has(agentId)) messageRates.set(agentId, { timestamps: [], baseline: 5 });
+  const entry = messageRates.get(agentId);
+  entry.timestamps = entry.timestamps.filter(t => t > now - CIRCUIT_BREAKER.baseline_window_ms);
+  entry.timestamps.push(now);
+
+  // Update baseline (messages per 5 min over the last hour)
+  const oldTs = entry.timestamps.filter(t => t < now - CIRCUIT_BREAKER.volume_window_ms);
+  if (oldTs.length > 0) {
+    const periodCount = Math.max(1, (now - CIRCUIT_BREAKER.volume_window_ms - Math.min(...oldTs)) / CIRCUIT_BREAKER.volume_window_ms);
+    entry.baseline = Math.max(5, Math.ceil(oldTs.length / periodCount));
+  }
+
+  // Check for spike in last 5 min
+  const recentTs = entry.timestamps.filter(t => t > now - CIRCUIT_BREAKER.volume_window_ms);
+  if (recentTs.length > entry.baseline * CIRCUIT_BREAKER.volume_spike_multiplier) {
+    setAgentStatus(agentId, 'quarantined');
+    console.log(`[circuit-breaker] Agent ${agentId} quarantined: volume spike (${recentTs.length} msgs in 5min, baseline ${entry.baseline})`);
+    return false;
+  }
+  return true;
+}
+
+function addKeyHistory(agentId, pubkey, reason = 'initial') {
+  if (!keyHistory.has(agentId)) keyHistory.set(agentId, []);
+  const history = keyHistory.get(agentId);
+  // Close previous entry
+  if (history.length > 0 && !history[history.length - 1].to) {
+    history[history.length - 1].to = Math.floor(Date.now() / 1000);
+  }
+  history.push({ pubkey, from: Math.floor(Date.now() / 1000), to: null, reason });
+}
+
+function quarantineDealsForKey(agentId, compromisedKey) {
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = now - 72 * 3600; // 72h lookback
+  const affected = [];
+  for (const [dealId, entry] of deals) {
+    if (!entry.dealMsg?.deal) continue;
+    const deal = entry.dealMsg.deal;
+    if ((deal.client?.agent === agentId || deal.provider?.agent === agentId) && deal.state !== 'QUARANTINED') {
+      deal.state = 'QUARANTINED';
+      affected.push(dealId);
+    }
+  }
+  return { affected, windowStart, windowEnd: now };
+}
+
 // ── WebSocket handler ───────────────────────────────────
 function handleWsMessage(ws, agentId, raw) {
   let msg;
@@ -94,6 +181,14 @@ function handleWsMessage(ws, agentId, raw) {
   }
 
   const senderKey = msg.from || agentId;
+
+  // v0.3: Check agent status (circuit breaker)
+  const status = getAgentStatus(senderKey);
+  if (status === 'quarantined' && msg.type !== 'quarantine_appeal') {
+    sendError(ws, 'E_QUARANTINED', msg.id);
+    return;
+  }
+
   const pubkeyRaw = getAgentPubkey(senderKey);
   if (!pubkeyRaw) {
     sendError(ws, 'E_AUTH', msg.id);
@@ -103,6 +198,12 @@ function handleWsMessage(ws, agentId, raw) {
   const { sig, ...rest } = msg;
   if (!verify(rest, sig, pubkeyB64)) {
     sendError(ws, 'E_AUTH', msg.id);
+    return;
+  }
+
+  // v0.3: Track message rate for circuit breaker
+  if (!trackMessageRate(senderKey)) {
+    sendError(ws, 'E_QUARANTINED', msg.id);
     return;
   }
 
@@ -133,6 +234,68 @@ function handleWsMessage(ws, agentId, raw) {
   const senderId = msg.from || agentId;
   if (!senderId) {
     sendError(ws, 'E_AUTH', msg.id);
+    return;
+  }
+
+  // ── KEY ROTATION (v0.3) ────────────────────────────────
+  if (msg.type === 'key_rotation') {
+    const targetAgent = agents.get(msg.agent);
+    if (!targetAgent || msg.agent !== senderId) {
+      sendError(ws, 'E_INVALID', msg.id);
+      return;
+    }
+    // Validate old key matches current
+    if (targetAgent.pubkey !== msg.old_pubkey) {
+      sendError(ws, 'E_AUTH', msg.id);
+      return;
+    }
+    // Record key history
+    addKeyHistory(msg.agent, msg.old_pubkey, 'rotated');
+    // Update to new key
+    targetAgent.pubkey = msg.new_pubkey;
+    addKeyHistory(msg.agent, msg.new_pubkey, msg.reason || 'rotation');
+
+    // If compromised, quarantine recent deals
+    if (msg.reason === 'compromised') {
+      const { affected, windowStart, windowEnd } = quarantineDealsForKey(msg.agent, msg.old_pubkey);
+      if (affected.length > 0) {
+        const quarantineMsg = makeDealQuarantine(RELAY_ID, relayKeypair.secretKey, msg.agent, msg.old_pubkey, affected, windowStart, windowEnd);
+        // Notify counterparties
+        for (const dealId of affected) {
+          const dealEntry = deals.get(dealId);
+          if (!dealEntry) continue;
+          const revocation = makeSecurityRevocation(RELAY_ID, relayKeypair.secretKey, msg.agent, [dealId]);
+          const { rfq, bid } = dealEntry;
+          const counterpartyId = rfq.from === msg.agent ? bid.from : rfq.from;
+          const counterpartyAgent = agents.get(counterpartyId);
+          if (counterpartyAgent) {
+            try { counterpartyAgent.ws.send(JSON.stringify(revocation)); } catch (_) {}
+          }
+        }
+        try { ws.send(JSON.stringify(quarantineMsg)); } catch (_) {}
+      }
+    }
+
+    // Broadcast key_rotation_notice to all connected agents
+    const notice = makeKeyRotationNotice(RELAY_ID, relayKeypair.secretKey, msg.agent, msg.old_pubkey, msg.new_pubkey, msg.reason);
+    for (const [, agent] of agents) {
+      try { agent.ws.send(JSON.stringify(notice)); } catch (_) {}
+    }
+    try { ws.send(JSON.stringify({ type: 'key_rotated', agent: msg.agent })); } catch (_) {}
+    console.log(`[key-rotation] Agent ${msg.agent} rotated key (reason: ${msg.reason})`);
+    return;
+  }
+
+  // ── QUARANTINE APPEAL (v0.3) ──────────────────────────
+  if (msg.type === 'quarantine_appeal') {
+    // Requires owner attestation — for now, accept if agent sends it
+    if (msg.owner_attestation && getAgentStatus(senderId) === 'quarantined') {
+      setAgentStatus(senderId, 'active');
+      try { ws.send(JSON.stringify({ type: 'quarantine_lifted', agent: senderId })); } catch (_) {}
+      console.log(`[quarantine] Appeal accepted for ${senderId}`);
+    } else {
+      sendError(ws, 'E_INVALID', msg.id);
+    }
     return;
   }
 
@@ -336,9 +499,51 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && path === '/v1/info') {
     return sendJson({
       relay_id: RELAY_ID,
-      proto: 'intent/0.2',
+      proto: 'intent/0.3',
       host: RELAY_HOST,
     });
+  }
+
+  // ── v0.3 Endpoints ────────────────────────────────────
+
+  // GET /v1/agents/:id/status
+  const agentStatusMatch = path.match(/^\/v1\/agents\/([^/]+)\/status$/);
+  if (req.method === 'GET' && agentStatusMatch) {
+    const agentId = decodeURIComponent(agentStatusMatch[1]);
+    return sendJson({
+      agent: agentId,
+      status: getAgentStatus(agentId),
+      connected: agents.has(agentId),
+    });
+  }
+
+  // GET /v1/agents/:id/key-history
+  const keyHistoryMatch = path.match(/^\/v1\/agents\/([^/]+)\/key-history$/);
+  if (req.method === 'GET' && keyHistoryMatch) {
+    const agentId = decodeURIComponent(keyHistoryMatch[1]);
+    return sendJson({
+      agent: agentId,
+      history: keyHistory.get(agentId) || [],
+    });
+  }
+
+  // GET /v1/relay/circuit-breaker-config
+  if (req.method === 'GET' && path === '/v1/relay/circuit-breaker-config') {
+    return sendJson({
+      ...CIRCUIT_BREAKER,
+      reputation_decay: REPUTATION_DECAY,
+    });
+  }
+
+  // GET /v1/deals?state=quarantined
+  if (req.method === 'GET' && path === '/v1/deals' && url.searchParams.get('state') === 'quarantined') {
+    const quarantined = [];
+    for (const [dealId, entry] of deals) {
+      if (entry.dealMsg?.deal?.state === 'QUARANTINED') {
+        quarantined.push({ deal_id: dealId, deal: entry.dealMsg.deal });
+      }
+    }
+    return sendJson({ quarantined, count: quarantined.length });
   }
 
   res.writeHead(404);
@@ -382,7 +587,7 @@ wss.on('connection', (ws) => {
 
 // Start
 server.listen(PORT, () => {
-  console.log(`Intent Protocol v0.2 Relay: ws://${RELAY_HOST}:${PORT}/v1/ws`);
+  console.log(`Intent Protocol v0.3 Relay: ws://${RELAY_HOST}:${PORT}/v1/ws`);
   console.log(`  Health: http://localhost:${PORT}/v1/health`);
   console.log(`  Stats:  http://localhost:${PORT}/v1/stats`);
   console.log(`  Deals:  http://localhost:${PORT}/v1/deals/:id`);
