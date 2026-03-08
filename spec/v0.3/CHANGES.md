@@ -108,12 +108,16 @@ New message type: `key_rotation`
 ```
 
 **Rules:**
-- Rotation MUST be signed by BOTH the old key AND the owner (human) attestation
-- If `reason: "compromised"`, the old key is immediately invalidated — relay MUST reject all messages signed by it
+- Rotation MUST be signed by BOTH the old key AND the owner attestation (recovery key)
+- If `reason: "compromised"`, the relay MUST require a valid `owner_attestation` and the agent MUST have registered a `recovery_pubkey` at registration (or previously). The attestation is a signature over the **canonical payload** (see below). Without valid recovery key + attestation, the relay MUST reject the rotation (prevents an attacker who stole the old key from rotating to their own key).
 - Agent identity (agent URI), reputation, and deal history are preserved
 - Relay MUST broadcast `key_rotation_notice` to all connected peers
-- Grace period: 24h where compromised key can only READ (verify signatures on incoming), not WRITE (sign outgoing)
 - Relays MUST maintain a key history log: `GET /v1/agents/{id}/key-history`
+- *Grace period 24h* (compromised key read-only): optional; reference implementation may invalidate the old key immediately.
+
+**Recovery key (registration):** Agents MAY register a `recovery_pubkey` (Ed25519, same format as `pubkey`) at registration time, e.g. in `profile.recovery_pubkey` or top-level `recovery_pubkey`. This key is used to verify `owner_attestation` for key_rotation (reason: compromised) and quarantine_appeal.
+
+**Canonical payload for owner_attestation:** The owner (recovery key holder) signs a deterministic JSON string. Keys must be sorted (lexicographic). For key_rotation: `{"agent":"...","new_pubkey":"...","old_pubkey":"...","reason":"...","ts":...}`. For quarantine_appeal: `{"agent":"...","type":"quarantine_appeal","ts":...}`. Relay MUST verify the signature against the stored recovery_pubkey (or current pubkey if no recovery_pubkey and appeal).
 
 #### 2.2 Deal Quarantine
 
@@ -133,7 +137,7 @@ New message type: `deal_quarantine`
 ```
 
 **Rules:**
-- When a key rotation with `reason: "compromised"` occurs, relay MUST scan all deals signed by that key within `quarantine_window` (default: 72h before rotation)
+- When a key rotation with `reason: "compromised"` occurs, relay MUST scan all deals where the agent is client or provider and the **deal was created** within `quarantine_window` (default: 72h before rotation). Deal creation time = relay timestamp when the deal message was created (`deal_msg.ts`).
 - Affected deals get `state: "QUARANTINED"` — settlements freeze
 - Counterparties receive `SECURITY_REVOCATION` notification with affected deal IDs
 - Quarantined deals require manual review by both parties to resume or cancel
@@ -174,9 +178,9 @@ v0.2 was tested in cooperative environments. Real-world deployment requires resi
 
 #### 3.2 Bid Timing Protections
 
-- Relays MUST enforce minimum bid window: `min_bid_window_ms` (default: 5000ms)
-- Bids arriving within `early_bid_threshold_ms` (default: 100ms) of RFQ receipt are flagged as `suspicious_timing`
-- Relay MUST NOT forward bids to PA until `min_bid_window_ms` has elapsed (prevents first-mover advantage from co-located agents)
+- Relays MUST enforce minimum bid window: `min_bid_window_ms` (default: 5000ms). The relay MUST NOT forward any bid to the PA until at least `min_bid_window_ms` has elapsed since the RFQ was received. Bids are buffered and flushed after the window (or at RFQ TTL expiry).
+- Bids arriving within `early_bid_threshold_ms` (default: 100ms) of RFQ receipt may be flagged as `suspicious_timing` (relay-specific).
+- Bid commitment MUST be sent only after the min_bid_window has elapsed (e.g. at TTL expiry, after flushing buffered bids to the PA).
 - Bid commitment timestamp MUST be within `max_clock_skew_ms` (default: 30000) of relay time
 
 #### 3.3 Counter-Weighting Hardening

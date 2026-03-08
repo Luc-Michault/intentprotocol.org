@@ -22,6 +22,7 @@
 ## Specification
 
 - [CHANGES.md](./CHANGES.md) — Full v0.2 → v0.3 delta
+- [CRITIQUE_ET_AMELIORATIONS_V03.md](./CRITIQUE_ET_AMELIORATIONS_V03.md) — Critique, écarts spec/implémentation, et pistes d’amélioration
 - [v0.2 spec](../v0.2/) — Previous version
 - [v0.1 spec](../v0.1/) — Original protocol
 

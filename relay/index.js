@@ -22,7 +22,7 @@
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import { createHash } from 'crypto';
-import { generateKeypair, verify } from './crypto.js';
+import { generateKeypair, verify, verifyPayload } from './crypto.js';
 import { geoMatch } from './geo.js';
 import {
   categoryMatch,
@@ -57,12 +57,16 @@ const attestations = new Map(); // dealId -> attestation object
 const agentStatus = new Map();     // agentId -> 'active' | 'quarantined' | 'throttled'
 const keyHistory = new Map();      // agentId -> [{ pubkey, from, to, reason }]
 const messageRates = new Map();    // agentId -> { timestamps: [], baseline: 0 }
+const MIN_BID_WINDOW_MS = parseInt(process.env.MIN_BID_WINDOW_MS || '5000', 10);
+const QUARANTINE_LOOKBACK_S = 72 * 3600; // 72h
+
 const CIRCUIT_BREAKER = {
-  volume_spike_multiplier: 10,     // > 10× normal rate
-  volume_window_ms: 5 * 60_000,   // 5 min window
-  baseline_window_ms: 60 * 60_000, // 1h baseline
+  volume_spike_multiplier: 10,
+  volume_window_ms: 5 * 60_000,
+  baseline_window_ms: 60 * 60_000,
   clock_skew_max_s: 30,
   quarantine_appeal_window_h: 72,
+  min_bid_window_ms: MIN_BID_WINDOW_MS,
 };
 const REPUTATION_DECAY = {
   half_life_days: 90,
@@ -104,6 +108,40 @@ function sendError(ws, code, ref = null) {
 function getAgentPubkey(agentId) {
   const a = agents.get(agentId);
   return a?.pubkey || null;
+}
+
+function getAgentRecoveryPubkey(agentId) {
+  const a = agents.get(agentId);
+  return a?.recovery_pubkey || null;
+}
+
+/** Canonical JSON for owner attestation (sorted keys). */
+function canonicalPayload(obj) {
+  const sorted = (o) => {
+    if (o === null || typeof o !== 'object') return o;
+    if (Array.isArray(o)) return o.map(sorted);
+    return Object.keys(o).sort().reduce((acc, k) => { acc[k] = sorted(o[k]); return acc; }, {});
+  };
+  return JSON.stringify(sorted(obj));
+}
+
+function verifyOwnerAttestation(payloadObj, attestationStr, recoveryPubkeyRaw) {
+  if (!attestationStr || !recoveryPubkeyRaw) return false;
+  const payloadStr = canonicalPayload(payloadObj);
+  const pubkeyB64 = recoveryPubkeyRaw.startsWith('ed25519:') ? recoveryPubkeyRaw.slice(8) : recoveryPubkeyRaw;
+  return verifyPayload(payloadStr, attestationStr, pubkeyB64);
+}
+
+/** v0.3: Send to PA only bids not yet sent (after min_bid_window). */
+function flushBidsToPA(entry) {
+  if (!entry.senderWs || !entry.bids) return;
+  for (const b of entry.bids) {
+    if (entry.sentBidIds.has(b.id)) continue;
+    try {
+      entry.senderWs.send(JSON.stringify(b));
+      entry.sentBidIds.add(b.id);
+    } catch (_) {}
+  }
 }
 
 // ── v0.3: Agent Status & Circuit Breaker ────────────────
@@ -151,11 +189,13 @@ function addKeyHistory(agentId, pubkey, reason = 'initial') {
 
 function quarantineDealsForKey(agentId, compromisedKey) {
   const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - 72 * 3600; // 72h lookback
+  const windowStart = now - QUARANTINE_LOOKBACK_S;
   const affected = [];
   for (const [dealId, entry] of deals) {
     if (!entry.dealMsg?.deal) continue;
     const deal = entry.dealMsg.deal;
+    const dealTs = entry.dealMsg.ts ?? 0;
+    if (dealTs < windowStart) continue; // only deals created within 72h
     if ((deal.client?.agent === agentId || deal.provider?.agent === agentId) && deal.state !== 'QUARANTINED') {
       deal.state = 'QUARANTINED';
       affected.push(dealId);
@@ -220,6 +260,7 @@ function handleWsMessage(ws, agentId, raw) {
       ws,
       profile,
       pubkey: msg.pubkey || null,
+      recovery_pubkey: msg.recovery_pubkey || profile.recovery_pubkey || null,
       type,
       categories: profile.categories || [],
       geo: profile.geo || null,
@@ -244,18 +285,27 @@ function handleWsMessage(ws, agentId, raw) {
       sendError(ws, 'E_INVALID', msg.id);
       return;
     }
-    // Validate old key matches current
     if (targetAgent.pubkey !== msg.old_pubkey) {
       sendError(ws, 'E_AUTH', msg.id);
       return;
     }
-    // Record key history
+    // reason "compromised" REQUIRES valid owner attestation (recovery key)
+    if (msg.reason === 'compromised') {
+      const recoveryPub = getAgentRecoveryPubkey(msg.agent);
+      if (!recoveryPub || !msg.owner_attestation) {
+        sendError(ws, 'E_INVALID: compromised rotation requires recovery_pubkey and owner_attestation', msg.id);
+        return;
+      }
+      const rotationPayload = { agent: msg.agent, old_pubkey: msg.old_pubkey, new_pubkey: msg.new_pubkey, reason: msg.reason, ts: msg.ts };
+      if (!verifyOwnerAttestation(rotationPayload, msg.owner_attestation, recoveryPub)) {
+        sendError(ws, 'E_AUTH: invalid owner_attestation', msg.id);
+        return;
+      }
+    }
     addKeyHistory(msg.agent, msg.old_pubkey, 'rotated');
-    // Update to new key
     targetAgent.pubkey = msg.new_pubkey;
     addKeyHistory(msg.agent, msg.new_pubkey, msg.reason || 'rotation');
 
-    // If compromised, quarantine recent deals
     if (msg.reason === 'compromised') {
       const { affected, windowStart, windowEnd } = quarantineDealsForKey(msg.agent, msg.old_pubkey);
       if (affected.length > 0) {
@@ -288,14 +338,28 @@ function handleWsMessage(ws, agentId, raw) {
 
   // ── QUARANTINE APPEAL (v0.3) ──────────────────────────
   if (msg.type === 'quarantine_appeal') {
-    // Requires owner attestation — for now, accept if agent sends it
-    if (msg.owner_attestation && getAgentStatus(senderId) === 'quarantined') {
-      setAgentStatus(senderId, 'active');
-      try { ws.send(JSON.stringify({ type: 'quarantine_lifted', agent: senderId })); } catch (_) {}
-      console.log(`[quarantine] Appeal accepted for ${senderId}`);
-    } else {
+    if (getAgentStatus(senderId) !== 'quarantined') {
       sendError(ws, 'E_INVALID', msg.id);
+      return;
     }
+    if (!msg.owner_attestation) {
+      sendError(ws, 'E_INVALID: quarantine_appeal requires owner_attestation', msg.id);
+      return;
+    }
+    const targetAgent = agents.get(senderId);
+    const appealPayload = { agent: senderId, type: 'quarantine_appeal', ts: msg.ts ?? Math.floor(Date.now() / 1000) };
+    const recoveryPub = getAgentRecoveryPubkey(senderId);
+    const currentPub = getAgentPubkey(senderId);
+    const verified = recoveryPub
+      ? verifyOwnerAttestation(appealPayload, msg.owner_attestation, recoveryPub)
+      : verifyOwnerAttestation(appealPayload, msg.owner_attestation, currentPub);
+    if (!verified) {
+      sendError(ws, 'E_AUTH: invalid owner_attestation', msg.id);
+      return;
+    }
+    setAgentStatus(senderId, 'active');
+    try { ws.send(JSON.stringify({ type: 'quarantine_lifted', agent: senderId })); } catch (_) {}
+    console.log(`[quarantine] Appeal accepted for ${senderId}`);
     return;
   }
 
@@ -326,6 +390,8 @@ function handleWsMessage(ws, agentId, raw) {
       senderWs: ws,
       senderAgent: senderId,
       bids: [],
+      sentBidIds: new Set(),
+      rfqReceivedAt: Date.now(),
       ttlTimer: null,
     });
 
@@ -346,6 +412,7 @@ function handleWsMessage(ws, agentId, raw) {
       const entry = rfqs.get(msg.id);
       if (!entry) return;
       entry.ttlTimer = null;
+      flushBidsToPA(entry);
       const commitment = makeBidCommitment(RELAY_ID, relayKeypair.secretKey, msg.id, entry.bids);
       try {
         entry.senderWs.send(JSON.stringify(commitment));
@@ -374,9 +441,9 @@ function handleWsMessage(ws, agentId, raw) {
     const entry = rfqs.get(msg.ref);
     if (!entry) return;
     entry.bids.push(msg);
-    try {
-      entry.senderWs.send(JSON.stringify(msg));
-    } catch (_) {}
+    if (Date.now() - entry.rfqReceivedAt >= MIN_BID_WINDOW_MS) {
+      flushBidsToPA(entry);
+    }
     return;
   }
 
