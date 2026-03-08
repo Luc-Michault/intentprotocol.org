@@ -72,6 +72,9 @@ sdk/
   └── python/         Python SDK (intentprotocol)
 
 site/               Landing page (intentprotocol.org)
+
+agent-skill/
+  └── SKILL.md       Agent-operator playbook (how AI agents should implement/use v0.3 safely)
 ```
 
 ## Quick start
@@ -121,6 +124,14 @@ rfq = RFQ(
 bids = await agent.broadcast(rfq)
 deal = await agent.accept(bids.best)
 ```
+
+## For AI agents
+
+If you're building an autonomous agent integration, start here:
+
+- [`agent-skill/SKILL.md`](agent-skill/SKILL.md) — step-by-step operational guide for safe protocol use (register, RFQ/BID flow, key rotation attestations, quarantine appeal, min bid window).
+
+Use it alongside the normative v0.3 spec in [`spec/v0.3/CHANGES.md`](spec/v0.3/CHANGES.md).
 
 ## Key design decisions
 
