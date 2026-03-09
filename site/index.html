@@ -597,31 +597,77 @@ footer{padding:80px 0 40px;border-top:1px solid var(--border);position:relative;
 <section id="developers">
 <div class="container">
   <h2 class="section-title reveal"><span class="gradient-text">Build an agent in 10 lines</span></h2>
-  <p class="section-subtitle reveal reveal-d1" style="margin:0 auto">Simple JSON over WebSocket. Ed25519 signatures. Ship an agent in an afternoon.</p>
+  <p class="section-subtitle reveal reveal-d1" style="margin:0 auto">SDK-first flow: init, submit intent, receive best bid, settle.</p>
+
   <div class="code-window reveal reveal-d2">
-    <div class="code-bar"><div class="code-bar-dot"></div><div class="code-bar-dot"></div><div class="code-bar-dot"></div><span class="code-bar-file">my-agent.js</span></div>
-    <div class="code-body"><span class="s-kw">import</span> { <span class="s-fn">connect</span>, <span class="s-fn">makeRFQ</span> } <span class="s-kw">from</span> <span class="s-str">'@intentprotocol/sdk'</span>;
+    <div class="code-bar"><div class="code-bar-dot"></div><div class="code-bar-dot"></div><div class="code-bar-dot"></div><span class="code-bar-file">quickstart.py</span></div>
+    <div class="code-body"><span class="s-kw">from</span> intentprotocol <span class="s-kw">import</span> IntentProtocol
 
-<span class="s-kw">const</span> agent = <span class="s-kw">await</span> <span class="s-fn">connect</span>(<span class="s-str">'wss://relay.intentprotocol.org'</span>);
+ip = IntentProtocol.<span class="s-fn">init</span>(<span class="s-prop">api_key</span>=os.getenv(<span class="s-str">"INTENT_API_KEY"</span>), <span class="s-prop">env</span>=<span class="s-str">"sandbox"</span>)
 
-<span class="s-kw">const</span> rfq = <span class="s-fn">makeRFQ</span>({
-  <span class="s-prop">action</span>: <span class="s-str">'book'</span>,
-  <span class="s-prop">category</span>: <span class="s-str">'services.beauty.haircut'</span>,
-  <span class="s-prop">budget</span>: { <span class="s-prop">max</span>: <span class="s-num">30</span>, <span class="s-prop">currency</span>: <span class="s-str">'EUR'</span> },
-  <span class="s-prop">where</span>: { <span class="s-prop">lat</span>: <span class="s-num">48.86</span>, <span class="s-prop">lon</span>: <span class="s-num">2.35</span>, <span class="s-prop">radius_km</span>: <span class="s-num">3</span> }
-});
+intent = {
+  <span class="s-str">"intent_type"</span>: <span class="s-str">"swap"</span>, <span class="s-str">"from_chain"</span>: <span class="s-str">"ethereum"</span>, <span class="s-str">"to_chain"</span>: <span class="s-str">"solana"</span>,
+  <span class="s-str">"token_in"</span>: <span class="s-str">"USDC"</span>, <span class="s-str">"token_out"</span>: <span class="s-str">"SOL"</span>, <span class="s-str">"amount_in"</span>: <span class="s-str">"500.00"</span>,
+  <span class="s-str">"max_slippage_bps"</span>: <span class="s-num">50</span>, <span class="s-str">"deadline_sec"</span>: <span class="s-num">90</span>, <span class="s-str">"recipient"</span>: <span class="s-str">"FFVd...QTbg"</span>
+}
 
-<span class="s-kw">const</span> bids = <span class="s-kw">await</span> agent.<span class="s-fn">broadcast</span>(rfq);
-<span class="s-kw">const</span> best = bids.<span class="s-fn">sort</span>((<span class="s-prop">a</span>, <span class="s-prop">b</span>) => b.score - a.score)[<span class="s-num">0</span>];
-<span class="s-kw">const</span> deal = <span class="s-kw">await</span> agent.<span class="s-fn">accept</span>(best);
-<span class="s-cm">// Done. Signed deal, booked appointment.</span></div>
+result = ip.intents.<span class="s-fn">submit</span>(intent)
+<span class="s-fn">print</span>(result.status, result.best_bid.amount_out, result.tx_hash)</div>
   </div>
-  <div class="dev-links reveal reveal-d3">
+
+  <div class="code-window reveal reveal-d3" style="margin-top:18px">
+    <div class="code-bar"><div class="code-bar-dot"></div><div class="code-bar-dot"></div><div class="code-bar-dot"></div><span class="code-bar-file">Intent Request / Best Bid</span></div>
+    <div class="code-body"><span class="s-cm">// Request_for_Intent</span>
+{
+  <span class="s-str">"intent_id"</span>: <span class="s-str">"intent_9f3a2b"</span>,
+  <span class="s-str">"intent_type"</span>: <span class="s-str">"swap"</span>,
+  <span class="s-str">"from_chain"</span>: <span class="s-str">"ethereum"</span>,
+  <span class="s-str">"to_chain"</span>: <span class="s-str">"solana"</span>,
+  <span class="s-str">"token_in"</span>: <span class="s-str">"USDC"</span>,
+  <span class="s-str">"token_out"</span>: <span class="s-str">"SOL"</span>,
+  <span class="s-str">"amount_in"</span>: <span class="s-str">"500.00"</span>,
+  <span class="s-str">"max_slippage_bps"</span>: <span class="s-num">50</span>,
+  <span class="s-str">"deadline_sec"</span>: <span class="s-num">90</span>,
+  <span class="s-str">"recipient"</span>: <span class="s-str">"FFVdJrdr...QTbg"</span>
+}
+
+<span class="s-cm">// Bid_Response</span>
+{
+  <span class="s-str">"intent_id"</span>: <span class="s-str">"intent_9f3a2b"</span>,
+  <span class="s-str">"bid_id"</span>: <span class="s-str">"bid_42ac91"</span>,
+  <span class="s-str">"solver"</span>: <span class="s-str">"solver_alpha_eu"</span>,
+  <span class="s-str">"amount_out"</span>: <span class="s-str">"3.1274"</span>,
+  <span class="s-str">"token_out"</span>: <span class="s-str">"SOL"</span>,
+  <span class="s-str">"total_fee_usd"</span>: <span class="s-str">"1.84"</span>,
+  <span class="s-str">"eta_seconds"</span>: <span class="s-num">28</span>,
+  <span class="s-str">"confidence"</span>: <span class="s-num">0.97</span>,
+  <span class="s-str">"status"</span>: <span class="s-str">"accepted"</span>,
+  <span class="s-str">"settlement_tx"</span>: <span class="s-str">"0x8f2e...c19a"</span>
+}</div>
+  </div>
+
+  <div class="dev-links reveal reveal-d3" style="margin-top:24px">
     <a href="https://github.com/Luc-Michault/intentprotocol.org/tree/main/spec/v0.3" target="_blank"><i data-lucide="file-text"></i> Full specification</a>
     <a href="https://github.com/Luc-Michault/intentprotocol.org" target="_blank"><i data-lucide="github"></i> GitHub</a>
   </div>
 </div>
 </section>
+<div class="section-divider"></div>
+
+<!-- 30 DAY CHECKLIST -->
+<section id="checklist">
+<div class="container">
+  <h2 class="section-title reveal"><span class="gradient-text">30-Day PoC Checklist</span></h2>
+  <p class="section-subtitle reveal reveal-d1" style="margin:0 auto">Four milestones. One laptop. Proof in under 5 minutes for any CTO.</p>
+  <div class="cases-grid">
+    <div class="case-card glass reveal reveal-d1"><div class="case-icon"><i data-lucide="power"></i></div><h3>1) SDK + Local Relay Up</h3><p>Install SDK (Python/JS), run relay in sandbox, configure .env.<br><strong>Success:</strong> healthcheck OK + first submit(intent).</p></div>
+    <div class="case-card glass reveal reveal-d2"><div class="case-icon"><i data-lucide="workflow"></i></div><h3>2) End-to-End Lifecycle</h3><p>Create intent → receive bids → accept best bid → settlement.<br><strong>Success:</strong> one intent_id reaches a traceable settlement_tx.</p></div>
+    <div class="case-card glass reveal reveal-d3"><div class="case-icon"><i data-lucide="shield-check"></i></div><h3>3) Trust & Safety Minimum</h3><p>Signatures, deadlines, slippage guards, replay protection, circuit breaker.<br><strong>Success:</strong> expired intent / bad sig / duplicate nonce tests pass.</p></div>
+    <div class="case-card glass reveal reveal-d1"><div class="case-icon"><i data-lucide="terminal"></i></div><h3>4) Visible Dev UX</h3><p>Terminal log stream, sorted bids, final status, JSON export + 3 scripted demos.<br><strong>Success:</strong> make demo proves value in &lt; 5 minutes.</p></div>
+  </div>
+</div>
+</section>
+<div class="section-divider"></div>
 
 <!-- FOOTER -->
 <footer>
