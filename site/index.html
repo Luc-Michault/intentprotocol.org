@@ -296,7 +296,9 @@ section{padding:140px 0;position:relative;z-index:1}
 /* ===== USE CASES ===== */
 #usecases{text-align:center}
 .cases-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:4rem}
-@media(max-width:768px){.cases-grid{grid-template-columns:1fr;max-width:400px;margin-left:auto;margin-right:auto}}
+.checklist-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:4rem}
+@media(max-width:1100px){.checklist-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){.cases-grid{grid-template-columns:1fr;max-width:400px;margin-left:auto;margin-right:auto}.checklist-grid{grid-template-columns:1fr;max-width:400px;margin-left:auto;margin-right:auto}}
 .case-card{padding:32px 24px;text-align:left;transition:all .4s cubic-bezier(.16,1,.3,1);
   position:relative;overflow:hidden;cursor:default}
 .case-card:hover{transform:translateY(-4px);border-color:rgba(99,102,241,.2)}
@@ -657,9 +659,9 @@ result = ip.intents.<span class="s-fn">submit</span>(intent)
 <!-- 30 DAY CHECKLIST -->
 <section id="checklist">
 <div class="container">
-  <h2 class="section-title reveal"><span class="gradient-text">30-Day PoC Checklist</span></h2>
-  <p class="section-subtitle reveal reveal-d1" style="margin:0 auto">Four milestones. One laptop. Proof in under 5 minutes for any CTO.</p>
-  <div class="cases-grid">
+  <h2 class="section-title reveal" style="text-align:center"><span class="gradient-text">30-Day PoC Checklist</span></h2>
+  <p class="section-subtitle reveal reveal-d1" style="margin:0 auto;text-align:center">Four milestones. One laptop. Proof in under 5 minutes for any CTO.</p>
+  <div class="checklist-grid">
     <div class="case-card glass reveal reveal-d1"><div class="case-icon"><i data-lucide="power"></i></div><h3>1) SDK + Local Relay Up</h3><p>Install SDK (Python/JS), run relay in sandbox, configure .env.<br><strong>Success:</strong> healthcheck OK + first submit(intent).</p></div>
     <div class="case-card glass reveal reveal-d2"><div class="case-icon"><i data-lucide="workflow"></i></div><h3>2) End-to-End Lifecycle</h3><p>Create intent → receive bids → accept best bid → settlement.<br><strong>Success:</strong> one intent_id reaches a traceable settlement_tx.</p></div>
     <div class="case-card glass reveal reveal-d3"><div class="case-icon"><i data-lucide="shield-check"></i></div><h3>3) Trust & Safety Minimum</h3><p>Signatures, deadlines, slippage guards, replay protection, circuit breaker.<br><strong>Success:</strong> expired intent / bad sig / duplicate nonce tests pass.</p></div>
